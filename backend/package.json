@@ -1,0 +1,26 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.4.1",
+    "groq-sdk": "^1.1.2",
+    "mongoose": "^9.6.1",
+    "multer": "^2.1.1",
+    "openai": "^6.35.0",
+    "pdf-parse-fixed": "^1.1.1",
+    "uuid": "^14.0.0"
+  }
+}

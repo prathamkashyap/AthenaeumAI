@@ -1,0 +1,339 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AthenaeumAI — Black Starry Minimal + Neon Subtle Accents (default)
+   Optional: .theme-academia class on <html> swaps to dark academia gold.
+   All colors HSL.
+*/
+
+@layer base {
+  :root {
+    /* Deep space black */
+    --background: 220 30% 3%;            /* #05070a vibe */
+    --foreground: 210 25% 96%;           /* soft white */
+
+    --card: 220 28% 5%;
+    --card-foreground: 210 25% 96%;
+
+    --popover: 220 30% 4%;
+    --popover-foreground: 210 25% 97%;
+
+    --primary: 210 90% 65%;              /* electric blue */
+    --primary-foreground: 220 40% 6%;
+
+    --secondary: 220 25% 9%;
+    --secondary-foreground: 210 25% 95%;
+
+    --muted: 220 20% 10%;
+    --muted-foreground: 215 15% 65%;
+
+    --accent: 195 95% 60%;               /* cyan glow */
+    --accent-foreground: 220 40% 6%;
+
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 25% 97%;
+
+    --success: 150 70% 50%;
+
+    --border: 215 25% 14%;
+    --input: 215 25% 12%;
+    --ring: 210 90% 65%;
+
+    --radius: 0.5rem;
+
+    /* Faint purple secondary accent */
+    --accent-purple: 265 80% 70%;
+    --ink: 220 35% 2%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(220 35% 4%) 0%, hsl(220 30% 7%) 100%);
+    --gradient-card: linear-gradient(160deg, hsl(220 28% 6%) 0%, hsl(220 30% 3%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(210 90% 65%) 0%, hsl(220 80% 55%) 100%);
+    --gradient-gold: var(--gradient-accent); /* legacy alias so .gold-text still works */
+    --gradient-vignette: radial-gradient(ellipse at top, hsl(215 60% 12% / 0.45) 0%, transparent 70%);
+
+    --shadow-elegant: 0 20px 60px -20px hsl(0 0% 0% / 0.7);
+    --shadow-glow: 0 0 40px hsl(210 90% 65% / 0.25);
+    --shadow-card: 0 4px 24px -8px hsl(0 0% 0% / 0.6);
+
+    --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* sidebar */
+    --sidebar-background: 220 32% 4%;
+    --sidebar-foreground: 215 20% 78%;
+    --sidebar-primary: 210 90% 65%;
+    --sidebar-primary-foreground: 220 40% 6%;
+    --sidebar-accent: 220 25% 8%;
+    --sidebar-accent-foreground: 210 25% 95%;
+    --sidebar-border: 215 25% 12%;
+    --sidebar-ring: 210 90% 65%;
+  }
+
+  /* Optional: legacy Dark Academia gold theme — opt-in */
+  .theme-academia {
+    --background: 30 14% 7%;
+    --foreground: 38 30% 88%;
+    --card: 28 16% 10%;
+    --card-foreground: 38 30% 88%;
+    --popover: 28 18% 9%;
+    --popover-foreground: 38 30% 90%;
+    --primary: 36 45% 72%;
+    --primary-foreground: 28 30% 10%;
+    --secondary: 25 18% 14%;
+    --secondary-foreground: 38 30% 88%;
+    --muted: 28 12% 14%;
+    --muted-foreground: 36 14% 62%;
+    --accent: 38 55% 58%;
+    --accent-foreground: 28 30% 8%;
+    --destructive: 8 55% 48%;
+    --destructive-foreground: 38 30% 95%;
+    --border: 30 12% 18%;
+    --input: 30 12% 16%;
+    --ring: 38 55% 58%;
+    --gradient-hero: linear-gradient(135deg, hsl(28 18% 9%) 0%, hsl(22 25% 13%) 100%);
+    --gradient-card: linear-gradient(160deg, hsl(28 16% 11%) 0%, hsl(25 18% 8%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(38 55% 58%) 0%, hsl(34 50% 48%) 100%);
+    --gradient-gold: var(--gradient-accent);
+    --gradient-vignette: radial-gradient(ellipse at top, hsl(30 25% 14% / 0.6) 0%, transparent 70%);
+    --shadow-glow: 0 0 40px hsl(38 55% 58% / 0.18);
+    --sidebar-background: 28 18% 8%;
+    --sidebar-foreground: 38 25% 80%;
+    --sidebar-primary: 38 55% 58%;
+    --sidebar-primary-foreground: 28 30% 8%;
+    --sidebar-accent: 28 16% 13%;
+    --sidebar-accent-foreground: 38 30% 88%;
+    --sidebar-border: 30 12% 16%;
+    --sidebar-ring: 38 55% 58%;
+  }
+
+  /* Light mode — clean white with the same blue/cyan accent */
+  .theme-light {
+    --background: 210 40% 98%;
+    --foreground: 220 35% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 35% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 35% 12%;
+
+    --primary: 210 90% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 30% 94%;
+    --secondary-foreground: 220 35% 14%;
+
+    --muted: 210 25% 94%;
+    --muted-foreground: 215 15% 42%;
+
+    --accent: 200 90% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 25% 88%;
+    --input: 215 25% 90%;
+    --ring: 210 90% 50%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(210 40% 98%) 0%, hsl(210 50% 94%) 100%);
+    --gradient-card: linear-gradient(160deg, hsl(0 0% 100%) 0%, hsl(210 30% 96%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(210 90% 55%) 0%, hsl(200 95% 45%) 100%);
+    --gradient-gold: var(--gradient-accent);
+    --shadow-glow: 0 0 40px hsl(210 90% 55% / 0.20);
+    --shadow-elegant: 0 20px 60px -20px hsl(210 40% 30% / 0.18);
+    --shadow-card: 0 4px 24px -8px hsl(210 40% 30% / 0.10);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 25% 25%;
+    --sidebar-primary: 210 90% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 30% 95%;
+    --sidebar-accent-foreground: 220 35% 14%;
+    --sidebar-border: 215 25% 90%;
+    --sidebar-ring: 210 90% 50%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  h1, h2, h3, h4, .font-serif {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    letter-spacing: -0.01em;
+  }
+  body, p, span, button, input, textarea {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+}
+
+@layer components {
+  .academic-card {
+    @apply rounded-lg border border-border bg-card transition-all duration-300;
+    background-image: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+  }
+  .academic-card:hover {
+    @apply border-accent/40;
+    box-shadow: var(--shadow-elegant), var(--shadow-glow);
+  }
+  .gold-text {
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .ornament::before, .ornament::after {
+    content: "❦";
+    @apply text-accent/50 mx-3 text-sm;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+@layer utilities {
+  /* ======= Starry Background ======= */
+
+  /* Outer wrapper handles slow drift + pointer parallax */
+  .star-drift {
+    position: absolute;
+    border-radius: 9999px;
+    will-change: transform;
+    transform: translate3d(var(--parallax-x, 0), var(--parallax-y, 0), 0);
+    animation: star-drift var(--drift-dur, 40s) ease-in-out infinite alternate;
+  }
+  .star-twinkle {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    box-shadow: inherit;
+    will-change: opacity;
+    animation: star-twinkle ease-in-out infinite;
+  }
+
+  @keyframes star-drift {
+    0%   { transform: translate3d(var(--parallax-x, 0), var(--parallax-y, 0), 0); }
+    100% { transform: translate3d(calc(var(--parallax-x, 0px) + var(--drift-x, 0px)),
+                                  calc(var(--parallax-y, 0px) + var(--drift-y, 0px)), 0); }
+  }
+  @keyframes star-twinkle {
+    0%, 100% { opacity: 0.18; }
+    50%      { opacity: 1;    }
+  }
+
+  /* Slow nebula drift */
+  @keyframes nebula-drift-a {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(40px, 20px, 0) scale(1.08); }
+  }
+  @keyframes nebula-drift-b {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(-30px, -25px, 0) scale(1.05); }
+  }
+  @keyframes nebula-drift-c {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50%      { transform: translate3d(25px, -35px, 0) scale(1.1); }
+  }
+  .animate-nebula-drift-a { animation: nebula-drift-a 22s ease-in-out infinite; }
+  .animate-nebula-drift-b { animation: nebula-drift-b 28s ease-in-out infinite; }
+  .animate-nebula-drift-c { animation: nebula-drift-c 34s ease-in-out infinite; }
+
+  /* Comets — directional via CSS vars */
+  .comet {
+    position: absolute;
+    height: 1.5px;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, transparent 0%, hsl(0 0% 100% / 0.9) 45%, hsl(210 100% 75% / 0.95) 80%, hsl(210 95% 60% / 0) 100%);
+    box-shadow: 0 0 10px hsl(210 95% 80% / 0.65), 0 0 24px hsl(210 90% 70% / 0.35);
+    transform-origin: left center;
+    opacity: 0;
+    animation: comet-fly linear forwards;
+    will-change: transform, opacity;
+  }
+  .comet.comet-cyan {
+    background: linear-gradient(90deg, transparent 0%, hsl(0 0% 100% / 0.9) 40%, hsl(195 95% 70% / 0.95) 80%, hsl(195 95% 60% / 0) 100%);
+    box-shadow: 0 0 10px hsl(195 95% 75% / 0.7), 0 0 26px hsl(195 95% 60% / 0.4);
+  }
+  .comet::after {
+    content: "";
+    position: absolute;
+    right: -3px;
+    top: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: hsl(0 0% 100%);
+    box-shadow: 0 0 12px hsl(210 100% 90% / 0.95), 0 0 28px hsl(210 95% 70% / 0.7);
+  }
+
+  @keyframes comet-fly {
+    0%   { opacity: 0;   transform: rotate(var(--comet-angle, 0deg)) translate3d(0, 0, 0); }
+    12%  { opacity: 1; }
+    85%  { opacity: 0.9; }
+    100% { opacity: 0;   transform: rotate(var(--comet-angle, 0deg))
+             translate3d(var(--comet-end-x, 100vw), var(--comet-end-y, 0), 0); }
+  }
+
+  .ripple {
+    position: fixed;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    margin-top: -5px;
+    border-radius: 9999px;
+    pointer-events: none;
+    background: radial-gradient(circle, hsl(210 100% 90% / 0.9) 0%, hsl(215 95% 70% / 0.5) 40%, transparent 70%);
+    box-shadow: 0 0 12px hsl(210 100% 85% / 0.7);
+    animation: ripple-burst 0.75s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    z-index: 60;
+  }
+  @keyframes ripple-burst {
+    0%   { opacity: 0.9; transform: scale(0.4); }
+    60%  { opacity: 0.5; }
+    100% { opacity: 0;   transform: scale(14); }
+  }
+
+  /* Subtle shimmer sweep for hover trails */
+  .shimmer-hover {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .shimmer-hover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, transparent 30%, hsl(210 100% 90% / 0.18) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.7s ease;
+    pointer-events: none;
+  }
+  .shimmer-hover:hover::before { transform: translateX(100%); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .star, .comet, .ripple { animation: none !important; }
+  }
+
+  .flip-card { perspective: 1200px; }
+  .flip-inner {
+    transform-style: preserve-3d;
+    transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .flip-inner.flipped { transform: rotateY(180deg); }
+  .flip-face {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .flip-back { transform: rotateY(180deg); }
+}
