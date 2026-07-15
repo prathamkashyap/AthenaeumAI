@@ -1,0 +1,25 @@
+{
+  "testEnvironment": "node",
+  "transform": {},
+  "testMatch": [
+    "**/tests/**/*.test.js"
+  ],
+  "collectCoverageFrom": [
+    "services/**/*.js",
+    "utils/**/*.js",
+    "controllers/**/*.js",
+    "!services/defaultQuizSeeder.js",
+    "!utils/logger.js"
+  ],
+  "coverageThreshold": {
+    "global": {
+      "branches": 70,
+      "functions": 75,
+      "lines": 80,
+      "statements": 80
+    }
+  },
+  "coverageReporters": ["text", "lcov", "html"],
+  "testTimeout": 15000,
+  "verbose": true
+}

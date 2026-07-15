@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import logger from "../utils/logger.js";
 
 let isConnected = false;
 
@@ -12,12 +13,12 @@ const connectDB = async () => {
     });
 
     isConnected = true;
-    console.log(`MongoDB connected: ${conn.connection.host}`);
+    logger.info(`MongoDB connected: ${conn.connection.host}`);
     return conn;
   } catch (err) {
     isConnected = false;
-    console.error("MongoDB connection error:", err.message);
-    console.warn("⚠️  Running without database — quizzes will not be persisted.");
+    logger.error("MongoDB connection error:", err);
+    logger.warn("⚠️  Running without database — quizzes will not be persisted.");
     return null;
   }
 };

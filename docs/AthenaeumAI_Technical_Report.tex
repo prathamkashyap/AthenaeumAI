@@ -1,0 +1,472 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{float}
+
+% --- Code Listing Style ---
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  keywordstyle=\color{primary}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{orange!80!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  xleftmargin=1.5em,
+}
+
+% --- Colors and Links ---
+\definecolor{primary}{RGB}{41, 128, 185}
+\definecolor{accent}{RGB}{39, 174, 96}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primary,
+    filecolor=magenta,
+    urlcolor=primary,
+    pdftitle={AthenaeumAI: Technical Report v1.0},
+    pdfauthor={Pratham Kashyap}
+}
+
+% --- Section Formatting ---
+\titleformat{\section}{\Large\bfseries\color{primary}}{\thesection}{1em}{}[\vspace{-0.5em}\rule{\textwidth}{0.4pt}]
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+% --- Header/Footer ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textit{AthenaeumAI Technical Report v1.0}}
+\lhead{Pratham Kashyap}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+% ===================================================================
+% COVER PAGE
+% ===================================================================
+\begin{titlepage}
+    \centering
+    \vspace*{3cm}
+
+    {\Huge \bfseries \textcolor{primary}{AthenaeumAI}\par}
+    \vspace{0.5cm}
+    \rule{0.6\textwidth}{1pt}\par
+    \vspace{1cm}
+    {\Large \itshape An AI-Powered Adaptive Learning Platform\par}
+    \vspace{0.5cm}
+    {\large Technical Report --- Version 1.0\par}
+
+    \vspace{4cm}
+
+    {\Large \bfseries Pratham Kashyap\par}
+    \vspace{0.5cm}
+    {\large \today\par}
+
+    \vfill
+
+    {\normalsize \textit{A comprehensive technical report covering system architecture, adaptive learning algorithms, AI integration, database schema, background processing, security model, testing strategy, and deployment infrastructure.}\par}
+\end{titlepage}
+
+\newpage
+
+% ===================================================================
+% ABSTRACT
+% ===================================================================
+\begin{abstract}
+\noindent AthenaeumAI is a full-stack, AI-powered learning platform that generates quizzes, flashcards, analytics, and tutoring experiences from uploaded study material. Unlike static quiz generators, AthenaeumAI tracks per-topic mastery using exponential decay models, implements the SM-2 spaced repetition algorithm for flashcard scheduling, and employs a Retrieval-Augmented Generation (RAG) pipeline for hallucination-resistant AI tutoring. The system uses a containerized microservices architecture with React, Node.js/Express, MongoDB (with replica-set transactions), Redis, and BullMQ for durable asynchronous processing. This report documents the complete technical design, implementation decisions, and testing methodology of the v1.0 release.
+\end{abstract}
+
+\vspace{1cm}
+\tableofcontents
+\newpage
+\onehalfspacing
+
+% ===================================================================
+% 1. INTRODUCTION
+% ===================================================================
+\section{Introduction}
+
+The proliferation of digital learning tools has not kept pace with the pedagogical insight that \textit{how} knowledge is reviewed matters as much as \textit{what} is studied. Most quiz platforms generate questions statelessly --- they produce output and immediately forget the learner. AthenaeumAI was developed to address this gap by building a platform that continuously adapts to individual learning trajectories.
+
+\subsection{Problem Statement}
+Traditional learning management systems suffer from three fundamental limitations:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item \textbf{Static question banks} --- Questions are manually authored and do not scale with new material.
+    \item \textbf{No retention modeling} --- Systems cannot predict which topics a learner is about to forget.
+    \item \textbf{Disconnected feedback} --- Quiz results, flashcards, and tutoring exist as isolated features rather than a unified adaptive pipeline.
+\end{enumerate}
+
+\subsection{Solution Overview}
+AthenaeumAI solves these problems by integrating:
+\begin{itemize}[leftmargin=1.5cm]
+    \item Automated quiz generation from arbitrary PDF content via LLMs.
+    \item Per-topic mastery tracking with exponential decay-based retention scoring.
+    \item SM-2 spaced repetition for flashcard scheduling.
+    \item A RAG-grounded AI tutor that answers strictly from uploaded material.
+    \item Asynchronous background processing for material indexing and mistake analysis.
+\end{itemize}
+
+% ===================================================================
+% 2. SYSTEM ARCHITECTURE
+% ===================================================================
+\section{System Architecture}
+
+The platform follows a containerized, service-oriented architecture orchestrated via Docker Compose. Five containers collaborate at runtime:
+
+\begin{enumerate}[leftmargin=1.5cm]
+    \item \textbf{Frontend} --- React 18 SPA served via Nginx (port 8080).
+    \item \textbf{Backend} --- Express 5 REST API (port 5000).
+    \item \textbf{Worker} --- Dedicated BullMQ consumer process.
+    \item \textbf{MongoDB} --- Single-node replica set for transaction support.
+    \item \textbf{Redis} --- Message broker for BullMQ job queues.
+\end{enumerate}
+
+\subsection{Request Flow}
+A typical user interaction follows this path:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item The React frontend issues an authenticated REST request.
+    \item The Express API validates the JWT, processes the request, and performs synchronous database operations within a Mongoose transaction.
+    \item For asynchronous work (material indexing, attempt synchronization), the API enqueues a BullMQ job to Redis.
+    \item The dedicated Worker process dequeues and processes the job, updating MongoDB accordingly.
+    \item The frontend polls or re-fetches data via TanStack Query to reflect the updated state.
+\end{enumerate}
+
+\subsection{Technology Decisions}
+
+\begin{longtable}{p{3.5cm} p{3.5cm} p{7cm}}
+\toprule
+\textbf{Layer} & \textbf{Technology} & \textbf{Rationale} \\
+\midrule
+Frontend & React 18 + Vite & Fast HMR, lazy-loaded routes, TypeScript type safety \\
+UI Components & shadcn/ui + Radix & Accessible, composable primitives \\
+Styling & TailwindCSS & Utility-first CSS with design token consistency \\
+Data Fetching & TanStack Query & Automatic caching, background refetching, optimistic updates \\
+Backend & Express 5 & Mature HTTP framework with async error handling \\
+Database & MongoDB + Mongoose 9 & Flexible document model with replica-set transactions \\
+Queue & BullMQ + Redis & Durable job processing with retries, backoff, and deduplication \\
+AI & Groq API (Llama 3.3 70B) & Low-latency inference with structured JSON output \\
+Validation & Zod & Runtime schema validation for API inputs and environment \\
+Logging & Winston & Structured JSON logging with log levels \\
+Auth & JWT (HttpOnly cookies) & Stateless authentication with refresh token rotation \\
+\bottomrule
+\end{longtable}
+
+% ===================================================================
+% 3. DATABASE SCHEMA
+% ===================================================================
+\section{Database Schema}
+
+The application persists data across 12 Mongoose models:
+
+\begin{longtable}{p{4cm} p{10cm}}
+\toprule
+\textbf{Model} & \textbf{Purpose} \\
+\midrule
+User & Authentication credentials, profile metadata \\
+RefreshToken & JWT refresh token storage for rotation \\
+StudyMaterial & Uploaded PDF metadata and extracted text \\
+MaterialChunk & Indexed text segments for RAG retrieval \\
+Quiz & Generated questions with difficulty metadata \\
+QuizAttempt & User answer submissions with scoring \\
+UserProgress & Per-topic mastery, confidence, weakness scores \\
+LearningEvent & Timestamped learning activity log \\
+FlashcardSet & SM-2 flashcards with scheduling state \\
+ReviewQueue & Prioritized review items per user \\
+Notification & System notification payloads \\
+\bottomrule
+\end{longtable}
+
+\subsection{Key Schema Relationships}
+\begin{itemize}[leftmargin=1.5cm]
+    \item \texttt{UserProgress} aggregates mastery per topic per user, updated atomically after each quiz attempt.
+    \item \texttt{MaterialChunk} documents are created by the background worker during material indexing and referenced by the RAG tutor pipeline.
+    \item \texttt{FlashcardSet} contains an array of individual cards, each carrying SM-2 scheduling state (ease factor, interval, repetitions, next review date).
+\end{itemize}
+
+% ===================================================================
+% 4. ADAPTIVE LEARNING ENGINE
+% ===================================================================
+\section{Adaptive Learning Engine}
+
+\subsection{Per-Topic Mastery Tracking}
+After each quiz attempt, the \texttt{progressService} recalculates per-topic metrics:
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Mastery} --- Weighted rolling average of accuracy across attempts on a given topic.
+    \item \textbf{Confidence} --- Statistical confidence based on attempt count and consistency.
+    \item \textbf{Weakness Score} --- Inverse function of mastery penalized by recency of mistakes.
+\end{itemize}
+
+\subsection{Retention Decay Model}
+The analytics engine computes a \textit{retention score} per topic using exponential decay:
+\[
+R(t) = C \cdot e^{-\lambda t}
+\]
+where $C$ is the topic confidence, $t$ is the number of days since the last practice session, and $\lambda = 1/30$ is the decay constant (calibrated for a 30-day half-life). Topics with low retention scores are automatically surfaced in the review queue.
+
+\subsection{Estimated Readiness}
+The dashboard displays an overall \textit{readiness} metric computed as:
+\[
+\text{Readiness} = 0.55 \cdot \text{Mastery} + 0.25 \cdot \text{Confidence} + 0.20 \cdot \text{Retention}
+\]
+The mastery weight (0.55) is intentionally dominant because demonstrated knowledge is the strongest predictor of assessment performance.
+
+\subsection{Weak Topic Detection}
+Topics are flagged as ``weak'' if:
+\begin{itemize}[leftmargin=1.5cm]
+    \item Weakness score exceeds 35, \textbf{or}
+    \item Mastery is below 65\% (even if weakness score is low).
+    \item Topics with zero attempts are excluded to avoid false positives.
+\end{itemize}
+Results are sorted by weakness score in descending order and capped at 6 topics.
+
+% ===================================================================
+% 5. SPACED REPETITION (SM-2)
+% ===================================================================
+\section{Spaced Repetition --- SM-2 Algorithm}
+
+The flashcard system implements the SuperMemo SM-2 algorithm with the following parameters:
+
+\begin{longtable}{p{3cm} p{3cm} p{8cm}}
+\toprule
+\textbf{Rating} & \textbf{Quality} & \textbf{Effect} \\
+\midrule
+Again & 1 & Reset repetitions to 0, interval to 0 (same-day review), decrease ease factor \\
+Hard & 2 & Increment repetitions, interval 1 day on first rep, slightly lower ease \\
+Good & 4 & Standard progression, ease factor multiplier applied after second repetition \\
+Easy & 5 & 1.3x bonus multiplier on interval, increase ease factor \\
+\bottomrule
+\end{longtable}
+
+\subsection{Ease Factor Constraints}
+\begin{itemize}[leftmargin=1.5cm]
+    \item Minimum (floor): 1.3
+    \item Maximum (ceiling): 3.0
+    \item Default starting value: 2.5
+\end{itemize}
+
+The interval is always constrained to be $\geq 0$, and unknown ratings fall back to ``good'' (quality 4) to prevent scheduling failures.
+
+% ===================================================================
+% 6. AI INTEGRATION
+% ===================================================================
+\section{AI Integration}
+
+\subsection{Quiz Generation Pipeline}
+The quiz generation service (\texttt{aiQuizService.js}) orchestrates:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item Text chunking to respect Llama 3.3's context window.
+    \item Structured prompt construction requesting JSON-formatted multiple-choice questions.
+    \item Response parsing with quality filtering (\texttt{qualityFilter.js}).
+    \item Persistence within a Mongoose transaction.
+\end{enumerate}
+
+\subsection{Quality Filtering}
+Each generated question receives a score from 0--10 based on:
+\begin{itemize}[leftmargin=1.5cm]
+    \item Structural validity (question string, 4 options, valid answer index).
+    \item Minimum question length ($\geq 40$ characters).
+    \item Absence of ambiguous options (``all of the above'', ``none of the above'').
+    \item No duplicate options.
+    \item Presence and quality of explanation ($\geq 30$ characters).
+\end{itemize}
+Questions scoring below 5 are discarded before persistence.
+
+\subsection{RAG-Grounded AI Tutor}
+The AI tutor prevents hallucination through strict retrieval grounding:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item The user's query is combined with session history for context continuity.
+    \item The \texttt{embeddingService} retrieves relevant \texttt{MaterialChunk} documents from the user's uploaded material.
+    \item A constrained system prompt instructs the LLM to answer \textit{only} from the provided chunks, refusing to speculate beyond the source material.
+\end{enumerate}
+
+% ===================================================================
+% 7. BACKGROUND PROCESSING
+% ===================================================================
+\section{Background Processing --- BullMQ}
+
+\subsection{Architecture}
+The BullMQ pipeline consists of three components:
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Producer} (\texttt{jobQueue.js}) --- Enqueues jobs with exponential backoff, bounded retention, and typed error handling.
+    \item \textbf{Consumer} (\texttt{worker.js}) --- Dedicated Node.js process with concurrency 5, graceful shutdown (SIGINT/SIGTERM), and strict payload validation.
+    \item \textbf{Broker} (Redis) --- Durable message persistence between producer and consumer.
+\end{itemize}
+
+\subsection{Job Types}
+
+\begin{longtable}{p{5cm} p{9cm}}
+\toprule
+\textbf{Job Type} & \textbf{Description} \\
+\midrule
+\texttt{INDEX\_MATERIAL} & Parses uploaded PDF text into \texttt{MaterialChunk} documents for RAG retrieval \\
+\texttt{SYNC\_ATTEMPT} & Updates \texttt{UserProgress}, records \texttt{LearningEvents}, performs mistake analysis, and populates the review queue \\
+\texttt{REBUILD\_REVIEW\_QUEUE} & Recalculates and re-ranks the user's review queue based on current mastery and flashcard due dates \\
+\bottomrule
+\end{longtable}
+
+\subsection{Reliability Hardening (v1.0)}
+The v1.0 release includes several reliability improvements:
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Explicit enqueue errors} --- \texttt{QueueEnqueueError} (503) is thrown and propagated to the HTTP response if Redis cannot accept a critical job.
+    \item \textbf{Awaited enqueue} --- Critical job submissions (\texttt{INDEX\_MATERIAL}, \texttt{SYNC\_ATTEMPT}) are \texttt{await}ed by their controllers.
+    \item \textbf{Strict worker validation} --- Unknown job types and missing Mongo dependencies now throw errors (triggering BullMQ retries) instead of silently succeeding.
+    \item \textbf{Bounded retention} --- Completed jobs are retained for 500 entries or 7 days; failed jobs for 500 entries or 30 days.
+    \item \textbf{Deduplication} --- \texttt{REBUILD\_REVIEW\_QUEUE} jobs use per-user deduplication IDs to prevent unbounded job creation from dashboard reads.
+\end{itemize}
+
+% ===================================================================
+% 8. AUTHENTICATION AND SECURITY
+% ===================================================================
+\section{Authentication and Security}
+
+\subsection{Authentication Flow}
+\begin{enumerate}[leftmargin=1.5cm]
+    \item User registers with name, email, and password (validated via Zod schemas).
+    \item Password is hashed before persistence.
+    \item On login, a JWT access token and refresh token are issued.
+    \item Access tokens are sent as HttpOnly cookies to prevent XSS access.
+    \item Refresh tokens support rotation for session continuity.
+\end{enumerate}
+
+\subsection{Security Middleware}
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Helmet} --- Sets security-related HTTP headers.
+    \item \textbf{CORS} --- Restricted to the configured \texttt{FRONTEND\_URL}.
+    \item \textbf{Rate Limiting} --- Applied to AI-intensive endpoints to prevent abuse.
+    \item \textbf{Multer} --- File upload validation and size constraints.
+    \item \textbf{Request Validation} --- Zod-based middleware validates all API inputs at the route level.
+\end{itemize}
+
+% ===================================================================
+% 9. TESTING STRATEGY
+% ===================================================================
+\section{Testing Strategy}
+
+\subsection{Backend Unit Tests}
+The backend includes 118 unit tests across 6 test suites:
+\begin{itemize}[leftmargin=1.5cm]
+    \item \texttt{analyticsService.test.js} --- Retention decay, readiness formula, weak topic detection, accuracy trend bucketing.
+    \item \texttt{flashcardService.test.js} --- SM-2 algorithm correctness for all rating levels, edge cases, and clamp boundaries.
+    \item \texttt{qualityFilter.test.js} --- Scoring logic, structural disqualifiers, penalty stacking.
+    \item \texttt{reviewQueueService.test.js} --- Item classification, pagination, snooze behavior.
+    \item \texttt{topicNormalizationService.test.js} --- Abbreviation mapping, title case fallback, null handling.
+    \item \texttt{jobQueue.test.js} --- Enqueue success, typed error propagation, function payload rejection.
+\end{itemize}
+
+\subsection{Integration Tests}
+\begin{itemize}[leftmargin=1.5cm]
+    \item \texttt{api.test.js} --- 21 tests covering health checks, signup, login, protected route rejection, analytics, flashcards, and review queue endpoints.
+    \item \texttt{bullmq.test.js} --- Queue lifecycle, enqueue failure, retry behavior, bounded retention, and deduplication (requires live Redis).
+\end{itemize}
+
+\subsection{Frontend Tests}
+\begin{itemize}[leftmargin=1.5cm]
+    \item Vitest unit tests for component logic.
+    \item Playwright E2E tests for critical user flows.
+\end{itemize}
+
+\subsection{CI Pipeline}
+GitHub Actions runs on every push and pull request:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item Install dependencies (frontend and backend).
+    \item Run ESLint.
+    \item Build the frontend (Vite production build).
+    \item Syntax-check the backend (\texttt{node --check}).
+    \item Execute all backend unit and integration tests (with Redis service container).
+\end{enumerate}
+
+% ===================================================================
+% 10. DEPLOYMENT
+% ===================================================================
+\section{Deployment}
+
+\subsection{Docker Compose}
+The \texttt{docker-compose.yml} orchestrates five services:
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{mongo} --- MongoDB with single-node replica set initialization.
+    \item \textbf{redis} --- Redis 7 Alpine.
+    \item \textbf{backend} --- Express API server.
+    \item \textbf{worker} --- BullMQ consumer (same image, different entrypoint).
+    \item \textbf{frontend} --- Nginx serving the Vite production build.
+\end{itemize}
+
+\subsection{Production Recommendations}
+\begin{longtable}{p{3.5cm} p{10.5cm}}
+\toprule
+\textbf{Service} & \textbf{Recommendation} \\
+\midrule
+MongoDB & Atlas M10+ with replica set \\
+Redis & Upstash (serverless) or AWS ElastiCache \\
+Backend + Worker & Railway, Render, or AWS ECS \\
+Frontend & Vercel or AWS Amplify \\
+\bottomrule
+\end{longtable}
+
+% ===================================================================
+% 11. FUTURE WORK
+% ===================================================================
+\section{Future Work}
+
+\subsection{Phase 6: Semantic RAG}
+The current RAG pipeline uses hash-based text retrieval. Phase 6 will introduce:
+\begin{itemize}[leftmargin=1.5cm]
+    \item Dense vector embeddings via Sentence Transformers.
+    \item Qdrant vector database for similarity search.
+    \item Hybrid retrieval combining keyword and semantic search.
+    \item Lightweight cross-encoder reranking for precision.
+\end{itemize}
+
+\subsection{Phase 7: Advanced Features}
+\begin{itemize}[leftmargin=1.5cm]
+    \item Multi-modal document support (images, diagrams).
+    \item Collaborative study sessions.
+    \item Transactional outbox pattern for guaranteed async consistency.
+\end{itemize}
+
+% ===================================================================
+% 12. CONCLUSION
+% ===================================================================
+\section{Conclusion}
+
+AthenaeumAI demonstrates that a student portfolio project can reach production-grade architectural quality. The platform integrates adaptive learning algorithms, durable background processing, RAG-grounded AI tutoring, and comprehensive testing into a cohesive full-stack application. The v1.0 release represents a stable, deployable product with clear extension points for semantic search and advanced pedagogical features.
+
+% ===================================================================
+% END PAGE
+% ===================================================================
+\newpage
+\thispagestyle{empty}
+\vspace*{8cm}
+\begin{center}
+    \rule{0.4\textwidth}{1pt}\par
+    \vspace{0.5cm}
+    {\Large \bfseries \textcolor{primary}{End of Document}\par}
+    \vspace{0.5cm}
+    {\itshape AthenaeumAI Technical Report v1.0\par}
+    \vspace{0.3cm}
+    {\itshape Pratham Kashyap --- \today\par}
+    \vspace{1cm}
+    \rule{0.4\textwidth}{1pt}\par
+\end{center}
+
+\end{document}

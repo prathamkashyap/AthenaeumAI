@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { extractTextFromPDF } from "../utils/pdfParser.js";
 import { generateQuiz } from "../services/quizService.js";
 import Quiz from "../models/Quiz.js";
+import logger from "../utils/logger.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,11 +109,11 @@ const findFirstPDF = (dirPath, depth = 0) => {
 export const seedDefaultQuizzes = async (studyMaterialPath) => {
   // Check if study material directory exists
   if (!fs.existsSync(studyMaterialPath)) {
-    console.log("📁 Study material directory not found, skipping default quiz seeding");
+    logger.warn("📁 Study material directory not found, skipping default quiz seeding");
     return;
   }
 
-  console.log("\n📚 Checking default subject quizzes...");
+  logger.info("📚 Checking default subject quizzes...");
 
   let seeded = 0;
   let skipped = 0;
@@ -135,17 +136,17 @@ export const seedDefaultQuizzes = async (studyMaterialPath) => {
       const pdfPath = findFirstPDF(subjectDir);
 
       if (!pdfPath) {
-        console.log(`   ⚠️  No PDF found for ${subject.shortName} in ${subject.folder}`);
+        logger.warn(`   ⚠️  No PDF found for ${subject.shortName} in ${subject.folder}`);
         continue;
       }
 
-      console.log(`   📄 Generating quiz for ${subject.shortName} from ${path.basename(pdfPath)}...`);
+      logger.info(`   📄 Generating quiz for ${subject.shortName} from ${path.basename(pdfPath)}...`);
 
       // Extract text
       const text = await extractTextFromPDF(pdfPath);
 
       if (!text || text.trim().length < 100) {
-        console.log(`   ⚠️  Not enough text in PDF for ${subject.shortName}`);
+        logger.warn(`   ⚠️  Not enough text in PDF for ${subject.shortName}`);
         continue;
       }
 
@@ -153,7 +154,7 @@ export const seedDefaultQuizzes = async (studyMaterialPath) => {
       const questions = await generateQuiz(text, "Medium", 10);
 
       if (!questions || questions.length === 0) {
-        console.log(`   ⚠️  Failed to generate questions for ${subject.shortName}`);
+        logger.warn(`   ⚠️  Failed to generate questions for ${subject.shortName}`);
         continue;
       }
 
@@ -169,13 +170,13 @@ export const seedDefaultQuizzes = async (studyMaterialPath) => {
       });
 
       seeded++;
-      console.log(`   ✅ ${subject.shortName}: ${questions.length} questions generated`);
+      logger.info(`   ✅ ${subject.shortName}: ${questions.length} questions generated`);
     } catch (err) {
-      console.error(`   ❌ Error seeding ${subject.shortName}:`, err.message);
+      logger.error(`   ❌ Error seeding ${subject.shortName}:`, err);
     }
   }
 
-  console.log(`\n📚 Seeding complete: ${seeded} new, ${skipped} already existed\n`);
+  logger.info(`📚 Seeding complete: ${seeded} new, ${skipped} already existed`);
 };
 
 /**

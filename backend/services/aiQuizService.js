@@ -1,264 +1,5 @@
-// import Groq from "groq-sdk";
-
-// // Lazy-initialize Groq client to avoid crash when API key is not yet configured
-// let groq = null;
-
-// const getGroqClient = () => {
-//   if (!process.env.GROQ_API_KEY) {
-//     throw new Error("GROQ_API_KEY is not set in environment variables");
-//   }
-//   if (!groq) {
-//     groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-//   }
-//   return groq;
-// };
-
-// /**
-//  * Difficulty-specific prompt configurations.
-//  * Controls the style, depth, and trickiness of generated questions.
-//  */
-// const DIFFICULTY_PROFILES = {
-//   Easy: {
-//     style: "straightforward recall and basic understanding",
-//     depth: "Test direct facts, definitions, and simple concepts from the text.",
-//     distractors: "Make wrong options clearly distinguishable but plausible.",
-//     temperature: 0.3,
-//   },
-//   Medium: {
-//     style: "application and analysis",
-//     depth: "Test ability to apply concepts, compare ideas, and understand relationships between topics.",
-//     distractors: "Include at least one tricky distractor that is partially correct but not the best answer.",
-//     temperature: 0.4,
-//   },
-//   Hard: {
-//     style: "critical thinking, edge cases, and deep analysis",
-//     depth: "Test nuanced understanding, exceptions to rules, and ability to evaluate complex scenarios. Include questions that require synthesizing multiple concepts.",
-//     distractors: "Make all distractors highly plausible. At least two should be partially correct. The correct answer should require careful reasoning.",
-//     temperature: 0.25,
-//   },
-// };
-
-// /**
-//  * Validates a single question object for correctness.
-//  */
-// const validateQuestion = (q, index) => {
-//   const errors = [];
-
-//   if (!q.question || typeof q.question !== "string" || q.question.trim().length < 10) {
-//     errors.push(`Q${index + 1}: Question text is missing or too short`);
-//   }
-
-//   if (!Array.isArray(q.options) || q.options.length !== 4) {
-//     errors.push(`Q${index + 1}: Must have exactly 4 options`);
-//   } else {
-//     // Check for duplicate options
-//     const unique = new Set(q.options.map((o) => o.toLowerCase().trim()));
-//     if (unique.size !== 4) {
-//       errors.push(`Q${index + 1}: Contains duplicate options`);
-//     }
-//     // Check for empty options
-//     if (q.options.some((o) => !o || o.trim().length === 0)) {
-//       errors.push(`Q${index + 1}: Contains empty options`);
-//     }
-//   }
-
-//   if (typeof q.answer !== "number" || q.answer < 0 || q.answer > 3) {
-//     errors.push(`Q${index + 1}: Answer index must be 0-3, got ${q.answer}`);
-//   }
-
-//   return errors;
-// };
-
-// /**
-//  * Attempts to parse quiz JSON from AI response with multiple strategies.
-//  */
-// const parseAIResponse = (raw) => {
-//   // Strategy 1: Direct JSON array extraction
-//   const arrayMatch = raw.match(/\[[\s\S]*\]/);
-//   if (arrayMatch) {
-//     try {
-//       return JSON.parse(arrayMatch[0]);
-//     } catch (e) {
-//       // Continue to next strategy
-//     }
-//   }
-
-//   // Strategy 2: Extract from markdown code block
-//   const codeBlockMatch = raw.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
-//   if (codeBlockMatch) {
-//     try {
-//       return JSON.parse(codeBlockMatch[1]);
-//     } catch (e) {
-//       // Continue to next strategy
-//     }
-//   }
-
-//   // Strategy 3: Try parsing the entire response
-//   try {
-//     const parsed = JSON.parse(raw);
-//     if (Array.isArray(parsed)) return parsed;
-//     if (parsed.questions && Array.isArray(parsed.questions)) return parsed.questions;
-//     if (parsed.quiz && Array.isArray(parsed.quiz)) return parsed.quiz;
-//   } catch (e) {
-//     // All strategies failed
-//   }
-
-//   return null;
-// };
-
-// /**
-//  * Generates exam-style MCQs using Groq AI with robust prompting,
-//  * validation, and retry logic.
-//  *
-//  * @param {string} text - Extracted text from the uploaded document
-//  * @param {string} difficulty - "Easy" | "Medium" | "Hard"
-//  * @param {number} count - Number of questions to generate (default 5)
-//  * @returns {Array} Array of validated question objects
-//  */
-// export const generateQuizFromAI = async (text, difficulty = "Easy", count = 5) => {
-//   const profile = DIFFICULTY_PROFILES[difficulty] || DIFFICULTY_PROFILES.Easy;
-//   const maxRetries = 2;
-//   let lastError = null;
-
-//   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-//     try {
-//       if (attempt > 0) {
-//         console.log(`AI generation retry ${attempt}/${maxRetries}...`);
-//       }
-
-//       const prompt = `You are an expert examination question creator for university-level assessments (NPTEL, PYQ-style).
-
-// TASK: Generate exactly ${count} multiple-choice questions from the provided study material.
-
-// DIFFICULTY LEVEL: ${difficulty}
-// - Question style: ${profile.style}
-// - Depth requirement: ${profile.depth}
-// - Distractor strategy: ${profile.distractors}
-
-// STRICT RULES:
-// 1. Every question MUST be derived ONLY from the provided text — no external knowledge.
-// 2. Questions must test ${profile.style} — NOT simple fill-in-the-blank or trivial recall.
-// 3. Each question must have exactly 4 options labeled as strings (not A/B/C/D prefixed).
-// 4. Exactly ONE option must be correct. The "answer" field is the 0-based index of the correct option.
-// 5. All 4 options must be distinct and meaningful — no "None of the above" or "All of the above".
-// 6. Include an "explanation" field that briefly explains WHY the correct answer is right and why key distractors are wrong.
-// 7. If possible, include a "topic" field identifying the subject area of the question.
-
-// RESPONSE FORMAT — Return ONLY a valid JSON array, no markdown, no explanation outside the JSON:
-
-// [
-//   {
-//     "question": "What is the primary purpose of...",
-//     "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
-//     "answer": 2,
-//     "explanation": "Option C is correct because... Option A is wrong because...",
-//     "topic": "Topic Name"
-//   }
-// ]
-
-// STUDY MATERIAL:
-// ${text.slice(0, 4000)}`;
-
-
-//       const response = await getGroqClient().chat.completions.create({
-//         model: "llama3-70b-8192",
-//         messages: [
-//           {
-//             role: "system",
-//             content: "You are a precise exam question generator. You output ONLY valid JSON arrays. No markdown, no explanation text outside the JSON.",
-//           },
-//           {
-//             role: "user",
-//             content: prompt,
-//           },
-//         ],
-//         temperature: profile.temperature,
-//         max_tokens: 4096,
-//       });
-
-//       const raw = response.choices[0]?.message?.content;
-
-//       if (!raw) {
-//         throw new Error("Empty response from AI");
-//       }
-
-//       console.log(`GROQ response length: ${raw.length} chars (attempt ${attempt + 1})`);
-
-//       // Parse the response
-//       const quiz = parseAIResponse(raw);
-
-//       if (!quiz) {
-//         throw new Error("Failed to parse JSON from AI response");
-//       }
-
-//       if (!Array.isArray(quiz) || quiz.length === 0) {
-//         throw new Error("AI returned empty or non-array response");
-//       }
-
-//       // Validate each question
-//       const allErrors = [];
-//       quiz.forEach((q, i) => {
-//         const errors = validateQuestion(q, i);
-//         allErrors.push(...errors);
-//       });
-
-//       if (allErrors.length > 0) {
-//         console.warn("Validation warnings:", allErrors);
-
-//         // Auto-fix what we can
-//         const fixedQuiz = quiz
-//           .filter((q) => {
-//             return (
-//               q.question &&
-//               Array.isArray(q.options) &&
-//               q.options.length === 4 &&
-//               typeof q.answer === "number" &&
-//               q.answer >= 0 &&
-//               q.answer <= 3
-//             );
-//           })
-//           .map((q) => ({
-//             question: q.question.trim(),
-//             options: q.options.map((o) => (typeof o === "string" ? o.trim() : String(o))),
-//             answer: q.answer,
-//             explanation: q.explanation || "",
-//             topic: q.topic || "",
-//           }));
-
-//         if (fixedQuiz.length === 0) {
-//           throw new Error("No valid questions after validation");
-//         }
-
-//         console.log(`Validated: ${fixedQuiz.length}/${quiz.length} questions passed`);
-//         return fixedQuiz;
-//       }
-
-//       // All valid — normalize and return
-//       return quiz.map((q) => ({
-//         question: q.question.trim(),
-//         options: q.options.map((o) => (typeof o === "string" ? o.trim() : String(o))),
-//         answer: q.answer,
-//         explanation: q.explanation || "",
-//         topic: q.topic || "",
-//       }));
-//     } catch (err) {
-//       lastError = err;
-//       console.error(`AI generation attempt ${attempt + 1} failed:`, err.message);
-
-//       if (attempt === maxRetries) {
-//         throw new Error(`AI generation failed after ${maxRetries + 1} attempts: ${lastError.message}`);
-//       }
-
-//       // Brief delay before retry
-//       await new Promise((resolve) => setTimeout(resolve, 1000));
-//     }
-//   }
-
-//   throw lastError;
-// };
-
-
 import Groq from "groq-sdk";
+import logger from "../utils/logger.js";
 
 // =========================
 // Groq Client (Lazy Init)
@@ -276,32 +17,16 @@ const getGroqClient = () => {
 };
 
 // =========================
-// Chunking (CRITICAL FIX)
-// =========================
-const chunkText = (text, size = 1200) => {
-  const chunks = [];
-  let i = 0;
-  while (i < text.length) {
-    chunks.push(text.slice(i, i + size));
-    i += size;
-  }
-  return chunks;
-};
-
-// =========================
 // Difficulty Profiles
 // =========================
 const DIFFICULTY = {
   Easy: {
-    style: "basic understanding and recall",
     temp: 0.3,
   },
   Medium: {
-    style: "conceptual + application",
     temp: 0.4,
   },
   Hard: {
-    style: "deep reasoning and tricky scenarios",
     temp: 0.25,
   },
 };
@@ -322,123 +47,251 @@ const parseAIResponse = (raw) => {
 // =========================
 // Validation
 // =========================
+export const VALID_COGNITIVE_LEVELS = new Set(["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]);
+
+export const getDefaultCognitiveLevel = (difficulty) => {
+  if (difficulty === "Easy") return "Remember";
+  if (difficulty === "Medium") return "Apply";
+  return "Evaluate";
+};
+
 const isValidQuestion = (q) => {
+  const hasValidCognitive = !q.cognitiveLevel || VALID_COGNITIVE_LEVELS.has(q.cognitiveLevel);
   return (
     q &&
-    q.question &&
+    typeof q.question === "string" &&
     Array.isArray(q.options) &&
     q.options.length === 4 &&
     typeof q.answer === "number" &&
     q.answer >= 0 &&
-    q.answer <= 3
+    q.answer <= 3 &&
+    hasValidCognitive
   );
 };
 
+const isValidFlashcard = (card) => {
+  return (
+    card &&
+    typeof card.front === "string" &&
+    typeof card.back === "string" &&
+    card.front.trim().length > 10 &&
+    card.back.trim().length > 20
+  );
+};
+
+const isValidMistakeAnalysis = (item) => {
+  return (
+    item &&
+    typeof item.questionIndex === "number" &&
+    typeof item.misconception === "string" &&
+    typeof item.clarification === "string" &&
+    typeof item.revisionSuggestion === "string"
+  );
+};
+
+const parseAIObjectResponse = (raw) => {
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
 // =========================
-// Prompt Builder (UPGRADED)
+// Prompt Builder (IMPROVED)
 // =========================
+// const buildPrompt = (text, difficulty, count) => {
+//   return `
+// You are an expert exam setter (GATE, NPTEL, University exams).
+
+// TASK:
+// Generate ${count} HIGH-QUALITY MCQs from the given content.
+
+// DIFFICULTY: ${difficulty}
+
+// Each question MUST:
+// - require reasoning, not recall
+// - involve elimination between similar options
+// - include at least one tricky/confusing option
+// - test WHY or HOW, not WHAT
+
+// Prefer questions like:
+// - "Why does X happen?"
+// - "What would happen if X is changed?"
+// - "Which scenario best demonstrates X?"
+
+// STRICT RULES:
+// - Use ONLY the given content
+// - DO NOT copy sentences directly
+// - NO fill-in-the-blanks
+// - Questions must test understanding (not memory)
+// - Avoid trivial or obvious questions
+
+// QUESTION DESIGN:
+// - Focus on concepts, reasoning, and application
+// - Include tricky and realistic distractors
+// - At least 2 options should appear plausible
+// - Avoid options like "All of the above" or "None"
+
+// FORMAT (STRICT JSON ARRAY ONLY):
+// [
+//   {
+//     "question": "",
+//     "options": ["", "", "", ""],
+//     "answer": 0,
+//     "explanation": "",
+//     "topic": ""
+//   }
+// ]
+
+// GOOD QUESTION STYLE:
+// "Which of the following best explains why X occurs?"
+
+// BAD QUESTION STYLE:
+// "X is defined as ______"
+
+// IMPORTANT:
+// - Do NOT reuse sentence structure from input
+// - Reframe content into conceptual questions
+// - Ensure each question is unique
+
+// Avoid:
+// - direct definitions
+// - obvious factual recall
+// - questions answerable in one glance
+
+// DIFFICULTY RULES:
+
+// Easy:
+// - Basic understanding
+
+// Medium:
+// - Application or scenario-based
+
+// Hard:
+// - Trick questions, edge cases, multi-step reasoning
+
+// CONTENT:
+// ${text}
+// `;
+// };
+
 const buildPrompt = (chunk, difficulty, count) => {
+  let cognitivePrompt = "";
+  if (difficulty === "Easy") {
+    cognitivePrompt = `For "Easy" difficulty, focus on the following Bloom's Taxonomy cognitive levels:
+- "Remember" (factual recall, retrieving relevant knowledge)
+- "Understand" (conceptual understanding, explaining ideas or concepts)
+Each question MUST have "cognitiveLevel" set to either "Remember" or "Understand".`;
+  } else if (difficulty === "Medium") {
+    cognitivePrompt = `For "Medium" difficulty, focus on the following Bloom's Taxonomy cognitive levels:
+- "Apply" (scenarios, using information in another familiar situation)
+- "Analyze" (breaking information into parts to explore understandings and relationships)
+Each question MUST have "cognitiveLevel" set to either "Apply" or "Analyze".`;
+  } else { // Hard
+    cognitivePrompt = `For "Hard" difficulty, focus on the following Bloom's Taxonomy cognitive levels:
+- "Evaluate" (justifying a stand or decision, critiquing, multi-step deduction)
+- "Create" (synthesizing information, designing or constructing new patterns)
+Each question MUST have "cognitiveLevel" set to either "Evaluate" or "Create".`;
+  }
+
   return `
-You are an expert exam paper setter (NPTEL + PYQ style).
+You are an expert exam setter (GATE, NPTEL, University exams).
 
 TASK:
-Generate ${count} HIGH-QUALITY MCQs strictly from the given text.
+Generate ${count} HIGH-QUALITY MCQs from the given content.
 
 DIFFICULTY: ${difficulty}
 
-IMPORTANT RULES:
-- Use ONLY the given text
-- No outside knowledge
-- Avoid trivial or obvious questions
+----------------------------------------
+COGNITIVE LEVEL & BLOOM'S TAXONOMY:
+----------------------------------------
+${cognitivePrompt}
 
-QUESTION QUALITY:
-- Focus on concepts, not wording
-- Include tricky and close distractors
-- At least 2 options should be partially correct
-
-CONTENT AWARENESS:
-- If definitions → conceptual questions
-- If lists → "which is correct/incorrect"
-- If advantages → "which is NOT an advantage"
-- If comparisons → scenario-based
-
-FORMAT (STRICT JSON ONLY):
-[
-  {
-    "question": "",
-    "options": ["", "", "", ""],
-    "answer": 0,
-    "explanation": "",
-    "topic": ""
-  }
-]
-DO NOT convert sentences directly into fill-in-the-blank questions.
+----------------------------------------
+CORE REQUIREMENTS:
+----------------------------------------
 
 Each question MUST:
-- require thinking
-- NOT be solvable by copying a single line
-- test understanding of the concept
+- require reasoning, not recall (except for Remember/Understand which can test fundamental concepts)
+- involve elimination between similar options
+- include at least one tricky/confusing option
+- test WHY or HOW, not WHAT
 
-BAD EXAMPLE (DO NOT DO):
-"Image transformation is a ____ operation"
+Prefer:
+- "Why does X happen?"
+- "What would happen if X changes?"
+- "Which scenario best demonstrates X?"
 
-GOOD EXAMPLE:
-"Which of the following best describes the role of image transformation?"
+----------------------------------------
+STRICT RULES:
+----------------------------------------
 
-If the content is a heading, list, or syllabus line:
-→ Convert it into a conceptual or application-based question.
-→ DO NOT keep original sentence structure.
+- Use ONLY the given content
+- DO NOT copy sentences directly
+- DO NOT create fill-in-the-blanks
+- Avoid factual recall questions
+- Avoid definitions
+- Avoid obvious answers
+- Avoid repeating similar questions
+- Ensure questions are NOT semantically similar to each other.
 
-TEXT:
+----------------------------------------
+QUESTION DESIGN:
+----------------------------------------
+
+- Focus on concepts, reasoning, and application
+- At least 2 options must seem correct at first glance
+- Only ONE correct answer
+- Avoid "All of the above" / "None of the above"
+
+----------------------------------------
+OUTPUT FORMAT (STRICT):
+----------------------------------------
+
+Return ONLY a valid JSON array.
+No explanation text. No markdown. No extra words.
+
+[
+  {
+    "question": "string",
+    "options": ["string", "string", "string", "string"],
+    "answer": 0,
+    "explanation": "string",
+    "topic": "string",
+    "cognitiveLevel": "string"
+  }
+]
+
+----------------------------------------
+CONTENT:
+----------------------------------------
+
 ${chunk}
 `;
 };
 
 // =========================
-// Core Generator (Chunk-wise)
-// =========================
-const generateFromChunk = async (chunk, difficulty, count) => {
-  const profile = DIFFICULTY[difficulty] || DIFFICULTY.Easy;
-
-  const response = await getGroqClient().chat.completions.create({
-    model: "llama3-70b-8192",
-    messages: [
-      {
-        role: "system",
-        content: "Return ONLY JSON array. No markdown.",
-      },
-      {
-        role: "user",
-        content: buildPrompt(chunk, difficulty, count),
-      },
-    ],
-    temperature: profile.temp,
-    max_tokens: 2048,
-  });
-
-  const raw = response.choices[0]?.message?.content;
-
-  if (!raw) throw new Error("Empty AI response");
-
-  const parsed = parseAIResponse(raw);
-
-  if (!parsed) throw new Error("Parsing failed");
-
-  return parsed.filter(isValidQuestion);
-};
-
-// =========================
-// MAIN FUNCTION (FINAL)
+// CORE AI CALL (PURE)
 // =========================
 export const generateQuizFromAI = async (
   text,
   difficulty = "Easy",
-  totalCount = 5
+  count = 5
 ) => {
   try {
-    const chunks = chunkText(text);
+    const profile = DIFFICULTY[difficulty] || DIFFICULTY.Easy;
 
-    // 🔥 Select diverse chunks (not just first ones)
+    // 🔥 Simple chunking (lightweight)
+    const chunkSize = 1500;
+    const chunks = [];
+    for (let i = 0; i < text.length; i += chunkSize) {
+      chunks.push(text.slice(i, i + chunkSize));
+    }
+
+    // 🔥 pick diverse chunks
     const selectedChunks = [
       chunks[0],
       chunks[Math.floor(chunks.length / 2)],
@@ -449,22 +302,262 @@ export const generateQuizFromAI = async (
 
     for (const chunk of selectedChunks) {
       try {
-        const questions = await generateFromChunk(
-          chunk,
-          difficulty,
-          Math.ceil(totalCount / selectedChunks.length)
-        );
+        const response = await getGroqClient().chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content: "Return ONLY JSON array. No markdown, no explanation.",
+            },
+            {
+              role: "user",
+              content: buildPrompt(chunk, difficulty, Math.ceil(count / selectedChunks.length)),
+            },
+          ],
+          temperature: difficulty === "Hard" ? 0.2 : profile.temp,
+          max_tokens: 2048,
+        });
 
-        allQuestions.push(...questions);
+        const raw = response.choices[0]?.message?.content;
+        const parsed = parseAIResponse(raw);
+
+        if (parsed) {
+          const valid = parsed.filter(isValidQuestion).map((q) => ({
+            ...q,
+            cognitiveLevel: q.cognitiveLevel && VALID_COGNITIVE_LEVELS.has(q.cognitiveLevel)
+              ? q.cognitiveLevel
+              : getDefaultCognitiveLevel(difficulty),
+          }));
+          allQuestions.push(...valid);
+        }
+
       } catch (err) {
-        console.warn("Chunk failed:", err.message);
+        logger.warn("Quiz generation chunk failed", { error: err.message });
       }
     }
 
-    // Final trim
-    return allQuestions.slice(0, totalCount);
+    // 🔥 remove duplicates
+    const unique = [];
+    const seen = new Set();
+
+    for (const q of allQuestions) {
+      if (!seen.has(q.question)) {
+        seen.add(q.question);
+        unique.push(q);
+      }
+    }
+
+    return unique.slice(0, count);
+
   } catch (err) {
-    console.error("AI generation failed:", err.message);
+    logger.error("AI quiz generation failed", { error: err.message });
     throw err;
   }
+};
+
+export const generateFlashcardsFromAI = async (text, count = 12) => {
+  if (!text || text.trim().length < 80) return [];
+
+  const response = await getGroqClient().chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      {
+        role: "system",
+        content: "Return ONLY a valid JSON array. No markdown, no commentary.",
+      },
+      {
+        role: "user",
+        content: `
+You are an expert learning scientist building active-recall flashcards.
+
+Generate ${count} high-quality flashcards from the content.
+
+Rules:
+- Use ONLY the supplied content.
+- Front side should test one concept, relationship, or misconception.
+- Back side should be concise but explanatory.
+- Prefer conceptual recall over trivia.
+- Include a topic label for each card.
+
+Return ONLY this JSON array:
+[
+  {
+    "front": "string",
+    "back": "string",
+    "topic": "string"
+  }
+]
+
+CONTENT:
+${text.slice(0, 9000)}
+`,
+      },
+    ],
+    temperature: 0.25,
+    max_tokens: 2048,
+  });
+
+  const raw = response.choices[0]?.message?.content || "";
+  const parsed = parseAIResponse(raw);
+  if (!parsed) return [];
+
+  return parsed
+    .filter(isValidFlashcard)
+    .map((card) => ({
+      front: card.front.trim(),
+      back: card.back.trim(),
+      topic: String(card.topic || "General").trim() || "General",
+    }))
+    .slice(0, count);
+};
+
+export const generateMistakeAnalysesFromAI = async ({ quizTitle, difficulty, mistakes }) => {
+  if (!mistakes?.length) return [];
+
+  const response = await getGroqClient().chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      {
+        role: "system",
+        content: "Return ONLY a valid JSON array. No markdown, no commentary.",
+      },
+      {
+        role: "user",
+        content: `
+You are an expert AI tutor analyzing wrong quiz answers.
+
+Quiz: ${quizTitle}
+Difficulty: ${difficulty}
+
+For each wrong answer, generate:
+- misconception: what misunderstanding likely caused the answer
+- clarification: concise conceptual correction
+- distractorReason: why the chosen distractor looked plausible
+- revisionSuggestion: what to review next
+- relatedFlashcards: 2-3 short flashcard prompts
+
+Use ONLY the question, options, correct answer, selected answer, explanation, and topic supplied.
+
+Return ONLY this JSON array:
+[
+  {
+    "questionIndex": 0,
+    "topic": "string",
+    "misconception": "string",
+    "clarification": "string",
+    "distractorReason": "string",
+    "revisionSuggestion": "string",
+    "relatedFlashcards": ["string", "string"]
+  }
+]
+
+WRONG ANSWERS:
+${JSON.stringify(mistakes, null, 2)}
+`,
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 2048,
+  });
+
+  const raw = response.choices[0]?.message?.content || "";
+  const parsed = parseAIResponse(raw);
+  if (!parsed) return [];
+
+  return parsed
+    .filter(isValidMistakeAnalysis)
+    .map((item) => ({
+      questionIndex: item.questionIndex,
+      topic: String(item.topic || "General").trim() || "General",
+      misconception: item.misconception.trim(),
+      clarification: item.clarification.trim(),
+      distractorReason: String(item.distractorReason || "").trim(),
+      revisionSuggestion: item.revisionSuggestion.trim(),
+      relatedFlashcards: Array.isArray(item.relatedFlashcards)
+        ? item.relatedFlashcards.map((card) => String(card).trim()).filter(Boolean).slice(0, 3)
+        : [],
+    }));
+};
+
+export const generateTutorResponseFromAI = async ({
+  question,
+  materialContexts,
+  weakTopics,
+  mistakeHistory,
+  flashcards,
+}) => {
+  const contextText = materialContexts.map((context, index) => (
+    `[SOURCE ${index + 1}]
+Title: ${context.sourceTitle}
+Chunk: ${context.chunkIndex}
+Similarity: ${context.score}
+Text: ${context.chunkText}`
+  )).join("\n\n");
+
+  const response = await getGroqClient().chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      {
+        role: "system",
+        content: "You are AthenaeumAI Tutor, a Socratic teaching assistant. You help the user learn by guiding them with hints and leading questions rather than giving immediate, direct answers or solutions. Answer only from the provided context. Return strict JSON.",
+      },
+      {
+        role: "user",
+        content: `
+The learner asks:
+${question}
+
+Use the uploaded material context and learner profile below.
+
+Rules:
+- Adopt a strict Socratic teaching style. Never give the direct solution or final answer immediately if the user is asking for a solution to an exercise or problem. Instead:
+  1. Break down the core concept and explain the underlying principles using scaffolding.
+  2. Provide a constructive hint or intermediate steps to guide the user's reasoning.
+  3. Ask a thought-provoking leading question at the end of the answer that prompts the user to take the next logical step.
+- Ground all explanations and concepts in the provided sources.
+- If context is insufficient, explain what is missing and suggest a Socratic study strategy.
+- Personalize using weak topics and prior mistakes when relevant.
+- Be clear, educational, and engaging.
+- Avoid inventing facts not supported by context.
+
+Return ONLY a JSON object:
+{
+  "answer": "string", // Structured as a Socratic hint/explanation ending with a leading question
+  "groundedSources": [{"sourceNumber": 1, "sourceTitle": "string", "whyRelevant": "string"}],
+  "personalizedNotes": ["string"],
+  "revisionPlan": ["string"],
+  "suggestedFollowUps": ["string"] // Under Socratic tutoring, suggested followups should be thought-provoking queries
+}
+
+UPLOADED MATERIAL CONTEXT:
+${contextText || "No matching uploaded material chunks were found."}
+
+WEAK TOPICS:
+${JSON.stringify(weakTopics, null, 2)}
+
+RECENT MISTAKES:
+${JSON.stringify(mistakeHistory, null, 2)}
+
+RELATED FLASHCARDS:
+${JSON.stringify(flashcards, null, 2)}
+`,
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 2500,
+  });
+
+  const raw = response.choices[0]?.message?.content || "";
+  const parsed = parseAIObjectResponse(raw);
+  if (!parsed?.answer) {
+    throw new Error("Tutor AI returned invalid response");
+  }
+
+  return {
+    answer: String(parsed.answer || "").trim(),
+    groundedSources: Array.isArray(parsed.groundedSources) ? parsed.groundedSources.slice(0, 5) : [],
+    personalizedNotes: Array.isArray(parsed.personalizedNotes) ? parsed.personalizedNotes.slice(0, 5) : [],
+    revisionPlan: Array.isArray(parsed.revisionPlan) ? parsed.revisionPlan.slice(0, 6) : [],
+    suggestedFollowUps: Array.isArray(parsed.suggestedFollowUps) ? parsed.suggestedFollowUps.slice(0, 5) : [],
+  };
 };

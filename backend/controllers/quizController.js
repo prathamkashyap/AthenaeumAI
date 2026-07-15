@@ -1,51 +1,73 @@
-import { generateQuiz } from "../services/quizService.js";
+import { generateQuizFromAI as generateQuiz } from "../services/aiQuizService.js";
 import { extractTextFromPDF } from "../utils/pdfParser.js";
 import Quiz from "../models/Quiz.js";
-import { getDefaultSubjects } from "../services/defaultQuizSeeder.js";
+import StudyMaterial from "../models/StudyMaterial.js";
 import { isDBConnected } from "../config/database.js";
+import { AIServiceError, DatabaseError, ValidationError, NotFoundError } from "../utils/errors.js";
+import QuizAttempt from "../models/QuizAttempt.js";
+import { getDefaultSubjects } from "../services/defaultQuizSeeder.js";
+import { updateUserProgressFromAttempt } from "../services/progressService.js";
+import { recordAttemptEvents } from "../services/learningEventService.js";
+import { analyzeMistakesForAttempt } from "../services/mistakeAnalysisService.js";
+import { enqueueFailedQuestionItems, rebuildReviewQueueForUser } from "../services/reviewQueueService.js";
+import { indexStudyMaterialChunks } from "../services/embeddingService.js";
+import logger from "../utils/logger.js";
+import { jobQueue } from "../utils/jobQueue.js";
+import { runInTransaction } from "../utils/dbTransactions.js";
+import { normalizeTopic } from "../services/topicNormalizationService.js";
 import fs from "fs";
 
 /**
- * POST /api/quiz/generate
+ * POST /api/v1/quiz/generate
  * Upload a PDF, extract text, generate quiz, save to DB, return quiz data.
  */
-export const generateQuizController = async (req, res) => {
+export const generateQuizController = async (req, res, next) => {
   let filePath = null;
+  let keepUploadedFile = false;
 
   try {
     if (!req.file) {
-      return res.status(400).json({
-        error: "No file uploaded. Please upload a PDF document.",
-      });
+      throw new ValidationError("No file uploaded. Please upload a PDF document.");
     }
 
     filePath = req.file.path;
     const difficulty = req.body.difficulty || "Easy";
     const questionCount = Math.min(Math.max(parseInt(req.body.count) || 5, 1), 20);
+    const tags = String(req.body.tags || "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 12);
 
-    console.log(`\n📄 Processing: ${req.file.originalname} (${difficulty}, ${questionCount}Q)`);
+    logger.info(`📄 Processing PDF upload: ${req.file.originalname}`, {
+      requestId: req.requestId,
+      difficulty,
+      questionCount,
+    });
 
     // Extract text from PDF
     const text = await extractTextFromPDF(filePath);
 
     if (!text || text.trim().length < 50) {
-      return res.status(400).json({
-        error: "Could not extract enough text from the PDF. The document may be image-based or too short.",
-      });
+      throw new ValidationError("Could not extract enough text from the PDF. The document may be image-based or too short.");
     }
 
-    console.log(`📝 Extracted ${text.length} characters`);
+    logger.info(`📝 Extracted text contents successfully`, {
+      requestId: req.requestId,
+      textLength: text.length,
+    });
 
     // Generate quiz
     const questions = await generateQuiz(text, difficulty, questionCount);
 
     if (!questions || questions.length === 0) {
-      return res.status(500).json({
-        error: "Failed to generate questions. Please try again.",
-      });
+      throw new AIServiceError("Failed to generate questions. Please try again.");
     }
 
-    console.log(`✅ Generated ${questions.length} questions`);
+    logger.info(`✅ Generated questions via AI service`, {
+      requestId: req.requestId,
+      questionCount: questions.length,
+    });
 
     // Build quiz title from filename
     const title = req.file.originalname
@@ -53,94 +75,123 @@ export const generateQuizController = async (req, res) => {
       .replace(/[-_]/g, " ")            // Replace dashes/underscores
       .replace(/\b\w/g, (c) => c.toUpperCase()); // Title case
 
-    // Attempt to save to database
-    let quizId = null;
-    try {
-      const savedQuiz = await Quiz.create({
+    const { savedQuiz, material } = await runInTransaction(async (session) => {
+      const mat = await StudyMaterial.create([{
+        user: req.user._id,
+        title,
+        originalFileName: req.file.originalname,
+        storagePath: req.file.path,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        tags,
+        extractedText: text,
+        textPreview: text.slice(0, 700),
+      }], { session });
+
+      const quiz = await Quiz.create([{
+        user: req.user._id,
+        studyMaterial: mat[0]._id,
         title,
         difficulty,
         sourceFileName: req.file.originalname,
         questionCount: questions.length,
         questions,
-      });
-      quizId = savedQuiz._id;
-      console.log(`💾 Saved to DB: ${quizId}`);
-    } catch (dbErr) {
-      console.warn("⚠️  DB save failed (running without persistence):", dbErr.message);
-      // Generate a temporary ID so the flow still works
-      quizId = `temp-${Date.now()}`;
-    }
+      }], { session });
+
+      return { savedQuiz: quiz[0], material: mat[0] };
+    });
+
+    keepUploadedFile = true;
+    await jobQueue.enqueue(`RAG Index Material: ${material.title}`, {
+      type: "INDEX_MATERIAL",
+      data: { materialId: material._id },
+    }, {
+      deduplicationId: `index-material:${material._id}`,
+    });
+
+    material.linkedQuizzes.push(savedQuiz._id);
+    await material.save();
+
+    logger.info(`✅ Quiz and Material saved successfully`, {
+      requestId: req.requestId,
+      quizId: savedQuiz._id,
+      materialId: material._id,
+    });
 
     res.json({
-      quizId,
+      quizId: savedQuiz._id,
+      materialId: material._id,
       title,
       difficulty,
       questionCount: questions.length,
       quiz: questions,
     });
   } catch (err) {
-    console.error("❌ Quiz generation error:", err.message);
-    res.status(500).json({
-      error: err.message || "An unexpected error occurred during quiz generation.",
-    });
+    next(err);
   } finally {
-    // Clean up uploaded file
-    if (filePath) {
+    if (filePath && !keepUploadedFile) {
       try {
         fs.unlinkSync(filePath);
       } catch (e) {
-        // Ignore cleanup errors
+        logger.warn("Failed to delete temp file:", { filePath, error: e.message });
       }
     }
   }
 };
 
 /**
- * GET /api/quiz/:id
+ * GET /api/v1/quiz/:id
  * Fetch a quiz by its MongoDB ID.
  */
-export const getQuizById = async (req, res) => {
+export const getQuizById = async (req, res, next) => {
   if (!isDBConnected()) {
-    return res.status(503).json({ error: "Database not available" });
+    return next(new DatabaseError("Database not available"));
   }
   try {
-    const quiz = await Quiz.findById(req.params.id);
+    const quiz = await Quiz.findOne({
+      _id: req.params.id,
+      $or: [{ user: req.user._id }, { isDefault: true }],
+    });
 
     if (!quiz) {
-      return res.status(404).json({ error: "Quiz not found" });
+      return next(new NotFoundError("Quiz not found"));
     }
 
     res.json(quiz);
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ error: "Invalid quiz ID format" });
-    }
-    console.error("Fetch quiz error:", err.message);
-    res.status(500).json({ error: "Failed to fetch quiz" });
+    next(err);
   }
 };
 
 /**
- * GET /api/quiz/history
+ * GET /api/v1/quiz/history
  * List all quizzes, most recent first.
  */
-export const getQuizHistory = async (req, res) => {
+export const getQuizHistory = async (req, res, next) => {
   if (!isDBConnected()) {
-    return res.json({ quizzes: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } });
+    return next(new DatabaseError("Database not available"));
   }
   try {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
     const skip = (page - 1) * limit;
 
+    const filter = { user: req.user._id };
+    if (req.query.search) {
+      filter.title = { $regex: req.query.search, $options: "i" };
+    }
+    if (req.query.difficulty) {
+      filter.difficulty = req.query.difficulty;
+    }
+
     const [quizzes, total] = await Promise.all([
-      Quiz.find({})
+      Quiz.find(filter)
         .select("title difficulty questionCount sourceFileName subject isDefault attempts createdAt")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Quiz.countDocuments({}),
+      Quiz.countDocuments(filter),
     ]);
 
     // Add computed fields
@@ -165,31 +216,59 @@ export const getQuizHistory = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Quiz history error:", err.message);
-    res.status(500).json({ error: "Failed to fetch quiz history" });
+    next(err);
   }
 };
 
 /**
- * POST /api/quiz/:id/attempt
+ * POST /api/v1/quiz/:id/attempt
  * Save a quiz attempt with score and answers.
  */
-export const saveAttempt = async (req, res) => {
+export const saveAttempt = async (req, res, next) => {
   if (!isDBConnected()) {
-    return res.json({ message: "Attempt recorded (no DB)", attemptCount: 0, bestScore: 0 });
+    return next(new DatabaseError("Database not available"));
   }
   try {
-    const { score, total, answers } = req.body;
+    const { score, total, answers, durationSeconds = 0 } = req.body;
 
-    if (typeof score !== "number" || typeof total !== "number") {
-      return res.status(400).json({ error: "Score and total are required" });
-    }
-
-    const quiz = await Quiz.findById(req.params.id);
+    const quiz = await Quiz.findOne({
+      _id: req.params.id,
+      $or: [{ user: req.user._id }, { isDefault: true }],
+    });
 
     if (!quiz) {
-      return res.status(404).json({ error: "Quiz not found" });
+      return next(new NotFoundError("Quiz not found"));
     }
+
+    const normalizedAnswers = (answers || []).map((selected, index) => {
+      const question = quiz.questions[index];
+      return {
+        questionIndex: index,
+        selected,
+        correct: question?.answer ?? -1,
+        isCorrect: selected === question?.answer,
+        topic: normalizeTopic(question?.topic || "General"),
+      };
+    });
+
+    const mistakeAnalyses = await analyzeMistakesForAttempt({
+      quiz,
+      normalizedAnswers,
+      limit: 5,
+    });
+
+    const attempt = await QuizAttempt.create({
+      user: req.user._id,
+      quiz: quiz._id,
+      studyMaterial: quiz.studyMaterial || null,
+      score,
+      total,
+      accuracy: Math.round((score / Math.max(total, 1)) * 100),
+      difficulty: quiz.difficulty,
+      durationSeconds,
+      answers: normalizedAnswers,
+      mistakeAnalyses,
+    });
 
     quiz.attempts.push({
       score,
@@ -200,37 +279,53 @@ export const saveAttempt = async (req, res) => {
 
     await quiz.save();
 
+    await jobQueue.enqueue(`Sync Attempt Analytics & Rebuild Queue - User ${req.user._id}`, {
+      type: "SYNC_ATTEMPT",
+      data: {
+        attemptId: attempt._id,
+        userId: req.user._id,
+        quizId: quiz._id,
+      },
+    }, {
+      deduplicationId: `sync-attempt:${attempt._id}`,
+    });
+
+    logger.info("Saved quiz attempt success", {
+      requestId: req.requestId,
+      attemptId: attempt._id,
+      score,
+      total,
+    });
+
     res.json({
       message: "Attempt saved",
+      attemptId: attempt._id,
+      mistakeAnalyses,
       attemptCount: quiz.attempts.length,
       bestScore: Math.max(...quiz.attempts.map((a) => Math.round((a.score / a.total) * 100))),
     });
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ error: "Invalid quiz ID format" });
-    }
-    console.error("Save attempt error:", err.message);
-    res.status(500).json({ error: "Failed to save attempt" });
+    next(err);
   }
 };
 
 /**
- * GET /api/quiz/subject/:subject
+ * GET /api/v1/quiz/subject/:subject
  * Fetch quizzes for a specific subject.
  */
-export const getQuizBySubject = async (req, res) => {
+export const getQuizBySubject = async (req, res, next) => {
   if (!isDBConnected()) {
-    return res.status(503).json({ error: "Database not available. Start MongoDB to access subject quizzes." });
+    return next(new DatabaseError("Database not available. Start MongoDB to access subject quizzes."));
   }
   try {
     const subject = decodeURIComponent(req.params.subject);
 
-    const quizzes = await Quiz.find({ subject })
+    const quizzes = await Quiz.find({ subject, $or: [{ user: req.user._id }, { isDefault: true }] })
       .sort({ isDefault: -1, createdAt: -1 })
       .lean();
 
     if (!quizzes.length) {
-      return res.status(404).json({ error: `No quizzes found for subject: ${subject}` });
+      return next(new NotFoundError(`No quizzes found for subject: ${subject}`));
     }
 
     // Enrich with computed fields
@@ -244,16 +339,15 @@ export const getQuizBySubject = async (req, res) => {
 
     res.json({ quizzes: enriched });
   } catch (err) {
-    console.error("Subject quiz error:", err.message);
-    res.status(500).json({ error: "Failed to fetch subject quizzes" });
+    next(err);
   }
 };
 
 /**
- * GET /api/quiz/subjects
+ * GET /api/v1/quiz/subjects
  * List available default subjects.
  */
-export const getSubjects = async (req, res) => {
+export const getSubjects = async (req, res, next) => {
   try {
     const subjects = getDefaultSubjects();
 
@@ -271,8 +365,14 @@ export const getSubjects = async (req, res) => {
     // Enrich with quiz counts from DB
     const enriched = await Promise.all(
       subjects.map(async (s) => {
-        const count = await Quiz.countDocuments({ subject: s.subject }).catch(() => 0);
-        const quiz = await Quiz.findOne({ subject: s.subject, isDefault: true })
+        const count = await Quiz.countDocuments({
+          subject: s.subject,
+          $or: [{ user: req.user._id }, { isDefault: true }],
+        }).catch(() => 0);
+        const quiz = await Quiz.findOne({
+          subject: s.subject,
+          $or: [{ user: req.user._id }, { isDefault: true }],
+        })
           .select("_id questionCount")
           .lean()
           .catch(() => null);
@@ -288,7 +388,25 @@ export const getSubjects = async (req, res) => {
 
     res.json({ subjects: enriched });
   } catch (err) {
-    console.error("Subjects list error:", err.message);
-    res.status(500).json({ error: "Failed to fetch subjects" });
+    next(err);
+  }
+};
+
+export const deleteQuiz = async (req, res, next) => {
+  try {
+    const quizId = req.params.id;
+    const quiz = await Quiz.findOneAndUpdate(
+      { _id: quizId, user: req.user._id, deletedAt: null },
+      { deletedAt: new Date() },
+      { new: true }
+    );
+
+    if (!quiz) {
+      return next(new NotFoundError("Quiz not found"));
+    }
+
+    res.json({ message: "Quiz soft-deleted successfully" });
+  } catch (err) {
+    next(err);
   }
 };

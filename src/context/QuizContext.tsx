@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { apiFetch } from "@/lib/api";
 
-const API_BASE = "http://localhost:3001/api/quiz";
+const API_BASE = "/quiz";
 
 export interface Question {
   question: string;
@@ -16,6 +17,7 @@ export interface QuizData {
   difficulty: string;
   questionCount: number;
   quiz: Question[];
+  materialId?: string;
 }
 
 export interface AttemptResult {
@@ -26,6 +28,17 @@ export interface AttemptResult {
   difficulty: string;
   title: string;
   quizId: string;
+  mistakeAnalyses?: MistakeAnalysis[];
+}
+
+export interface MistakeAnalysis {
+  questionIndex: number;
+  topic: string;
+  misconception: string;
+  clarification: string;
+  distractorReason?: string;
+  revisionSuggestion: string;
+  relatedFlashcards?: string[];
 }
 
 interface QuizContextType {
@@ -37,12 +50,15 @@ interface QuizContextType {
   generateQuiz: (file: File, difficulty: string, count?: number) => Promise<QuizData>;
   fetchQuiz: (id: string) => Promise<QuizData>;
   setResult: (result: AttemptResult) => void;
-  saveAttempt: (quizId: string, score: number, total: number, answers: number[]) => Promise<void>;
+  saveAttempt: (quizId: string, score: number, total: number, answers: number[], durationSeconds?: number) => Promise<{ mistakeAnalyses?: MistakeAnalysis[] } | void>;
   clearError: () => void;
   clearQuiz: () => void;
 }
 
 const QuizContext = createContext<QuizContextType | null>(null);
+
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message : fallback;
 
 export function QuizProvider({ children }: { children: ReactNode }) {
   const [currentQuiz, setCurrentQuiz] = useState<QuizData | null>(null);
@@ -61,7 +77,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       formData.append("difficulty", difficulty);
       formData.append("count", String(count));
       setGenerationProgress("Extracting text from PDF...");
-      const res = await fetch(`${API_BASE}/generate`, { method: "POST", body: formData });
+      const res = await apiFetch(`${API_BASE}/generate`, { method: "POST", body: formData });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: "Server error" }));
         throw new Error(errData.error || `Server error (${res.status})`);
@@ -74,8 +90,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       setCurrentQuiz(data);
       setGenerationProgress("");
       return data;
-    } catch (err: any) {
-      setError(err.message || "Failed to generate quiz");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to generate quiz"));
       throw err;
     } finally {
       setIsGenerating(false);
@@ -85,7 +101,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const fetchQuiz = useCallback(async (id: string): Promise<QuizData> => {
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${id}`);
+      const res = await apiFetch(`${API_BASE}/${id}`);
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: "Quiz not found" }));
         throw new Error(errData.error || "Failed to fetch quiz");
@@ -100,22 +116,23 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       };
       setCurrentQuiz(quizData);
       return quizData;
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to fetch quiz"));
       throw err;
     }
   }, []);
 
   const setResult = useCallback((result: AttemptResult) => setLastResult(result), []);
 
-  const saveAttempt = useCallback(async (quizId: string, score: number, total: number, answers: number[]) => {
+  const saveAttempt = useCallback(async (quizId: string, score: number, total: number, answers: number[], durationSeconds: number = 0) => {
     try {
       if (quizId.startsWith("temp-")) return;
-      await fetch(`${API_BASE}/${quizId}/attempt`, {
+      const response = await apiFetch(`${API_BASE}/${quizId}/attempt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score, total, answers }),
+        body: JSON.stringify({ score, total, answers, durationSeconds }),
       });
+      if (response.ok) return response.json();
     } catch (err) {
       console.warn("Failed to save attempt:", err);
     }

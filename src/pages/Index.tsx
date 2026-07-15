@@ -14,11 +14,14 @@ import {
   Loader2,
   BookOpen,
   Plus,
+  Bot,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
-const API_BASE = "http://localhost:3001/api/quiz";
+const API_BASE = "/quiz";
 
 interface SubjectInfo {
   subject: string;
@@ -40,12 +43,53 @@ interface RecentQuiz {
   createdAt: string;
 }
 
-const stats = [
-  { label: "Quizzes Taken", value: "—", delta: "Upload PDFs to start", icon: BookMarked },
-  { label: "Avg. Accuracy", value: "—", delta: "Track your progress", icon: Target },
-  { label: "Subjects", value: "8", delta: "Available now", icon: Flame },
-  { label: "AI Model", value: "70B", delta: "Llama 3", icon: Clock },
-];
+interface DashboardAnalytics {
+  totals?: {
+    quizzesTaken?: number;
+    questionsAnswered?: number;
+    estimatedReadiness?: number;
+    averageMastery?: number;
+    retentionScore?: number;
+    averageConfidence?: number;
+    reviewDueToday?: number;
+  };
+  weakTopics?: unknown[];
+}
+
+interface DashboardRecommendations {
+  optimalNextAction?: {
+    href?: string;
+    label?: string;
+    message?: string;
+  };
+  readinessScore?: number;
+  retentionTrend?: number;
+  reviewDueToday?: number;
+  weakestTopic?: {
+    topic: string;
+    mastery: number;
+    confidence: number;
+    weaknessScore: number;
+  } | null;
+  recommendedQuiz?: {
+    title: string;
+    topic: string;
+    difficulty: string;
+    reason: string;
+    href: string;
+  } | null;
+  suggestedRevision?: {
+    title: string;
+    description: string;
+    priority: number;
+    href: string;
+  } | null;
+  continueStudying?: {
+    title: string;
+    href: string;
+    lastAttemptAt?: string | null;
+  };
+}
 
 const SUBJECT_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   "Operating Systems": { bg: "bg-blue-500/10", border: "border-blue-500/20", text: "text-blue-400" },
@@ -60,14 +104,17 @@ const SUBJECT_COLORS: Record<string, { bg: string; border: string; text: string 
 
 const Index = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [subjects, setSubjects] = useState<SubjectInfo[]>([]);
   const [recentQuizzes, setRecentQuizzes] = useState<RecentQuiz[]>([]);
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
+  const [recommendations, setRecommendations] = useState<DashboardRecommendations | null>(null);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingRecent, setLoadingRecent] = useState(true);
 
   // Fetch subjects
   useEffect(() => {
-    fetch(`${API_BASE}/subjects`)
+    apiFetch(`${API_BASE}/subjects`)
       .then((r) => r.json())
       .then((data) => setSubjects(data.subjects || []))
       .catch(() => setSubjects([]))
@@ -76,11 +123,25 @@ const Index = () => {
 
   // Fetch recent quizzes
   useEffect(() => {
-    fetch(`${API_BASE}/history?limit=4`)
+    apiFetch(`${API_BASE}/history?limit=4`)
       .then((r) => r.json())
       .then((data) => setRecentQuizzes(data.quizzes || []))
       .catch(() => setRecentQuizzes([]))
       .finally(() => setLoadingRecent(false));
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/analytics/dashboard")
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null));
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/recommendations/dashboard")
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then(setRecommendations)
+      .catch(() => setRecommendations(null));
   }, []);
 
   const handleSubjectClick = (subject: SubjectInfo) => {
@@ -102,6 +163,33 @@ const Index = () => {
     return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   };
 
+  const stats = [
+    {
+      label: "Quizzes Taken",
+      value: String(analytics?.totals?.quizzesTaken ?? 0),
+      delta: `${analytics?.totals?.questionsAnswered ?? 0} questions answered`,
+      icon: BookMarked,
+    },
+    {
+      label: "Readiness",
+      value: `${analytics?.totals?.estimatedReadiness ?? 0}%`,
+      delta: `${analytics?.totals?.averageMastery ?? 0}% mastery`,
+      icon: Target,
+    },
+    {
+      label: "Retention",
+      value: `${analytics?.totals?.retentionScore ?? 0}%`,
+      delta: `${analytics?.totals?.averageConfidence ?? 0}% confidence`,
+      icon: Flame,
+    },
+    {
+      label: "Due Reviews",
+      value: String(analytics?.totals?.reviewDueToday ?? 0),
+      delta: `Streak ${user?.streak?.current ?? 0} day${user?.streak?.current === 1 ? "" : "s"}`,
+      icon: Clock,
+    },
+  ];
+
   return (
     <AppLayout>
       <div className="px-6 lg:px-10 py-8 max-w-7xl mx-auto space-y-10">
@@ -116,12 +204,14 @@ const Index = () => {
 
               <h1 className="font-serif text-4xl lg:text-6xl leading-[1.2] tracking-tight text-foreground break-words">
                 Welcome back,{" "}
-                <span className="gold-text italic inline-block">Pratham</span>.
+                <span className="text-accent italic inline-block">{user?.name?.split(" ")[0] || "Learner"}</span>.
                 <br /> Your study deck awaits.
               </h1>
 
               <p className="text-muted-foreground max-w-xl">
-                {subjects.length} subjects loaded from your curriculum. Upload new PDFs or practice from preloaded quizzes.
+                {analytics?.weakTopics?.length
+                  ? `${analytics.weakTopics.length} weak topic${analytics.weakTopics.length > 1 ? "s" : ""} detected from your attempts.`
+                  : "Upload PDFs, generate assessments, and AthenaeumAI will build your mastery map."}
               </p>
             </div>
 
@@ -286,10 +376,55 @@ const Index = () => {
           <Card className="academic-card p-6 space-y-6">
             <div>
               <h2 className="font-serif text-2xl">Quick Start</h2>
-              <p className="text-xs text-muted-foreground mt-1">Get practicing in seconds</p>
+              <p className="text-xs text-muted-foreground mt-1">Recommended next action</p>
             </div>
 
+            {recommendations?.optimalNextAction && (
+              <div className="rounded-lg border border-accent/20 bg-accent/5 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-accent mb-2">
+                  {recommendations.optimalNextAction.label}
+                </p>
+                <p className="text-sm text-foreground leading-relaxed">{recommendations.optimalNextAction.message}</p>
+                <Button asChild size="sm" variant="outline" className="mt-3 border-accent/40 text-accent hover:bg-accent/10">
+                  <Link to={recommendations.optimalNextAction.href || "/analytics"}>
+                    Open <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            )}
+
+            {recommendations && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-border bg-card/30 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Weakest Topic</p>
+                  <p className="text-sm text-foreground mt-1 truncate">{recommendations.weakestTopic?.topic || "None yet"}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card/30 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Review Due Today</p>
+                  <p className="text-sm text-foreground mt-1">{recommendations.reviewDueToday || 0} cards</p>
+                </div>
+                <div className="rounded-lg border border-border bg-card/30 p-3 col-span-2">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Recommended Quiz</p>
+                  <p className="text-sm text-foreground mt-1 truncate">
+                    {recommendations.recommendedQuiz?.title || "Generate a quiz to seed recommendations"}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
+              {recommendations?.continueStudying && (
+                <Button
+                  asChild
+                  variant="outline"
+                  className="w-full border-cyan-500/30 text-cyan-300 hover:border-cyan-400 hover:text-cyan-200 justify-start"
+                >
+                  <Link to={recommendations.continueStudying.href}>
+                    <BookOpen className="h-4 w-4 mr-2" /> Continue Studying
+                  </Link>
+                </Button>
+              )}
+
               <Button
                 asChild
                 className="w-full bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow justify-start"
@@ -316,6 +451,16 @@ const Index = () => {
               >
                 <Link to="/analytics">
                   <TrendingUp className="h-4 w-4 mr-2" /> View Analytics
+                </Link>
+              </Button>
+
+              <Button
+                asChild
+                variant="outline"
+                className="w-full border-border hover:border-accent hover:text-accent justify-start"
+              >
+                <Link to="/tutor">
+                  <Bot className="h-4 w-4 mr-2" /> Ask AI Tutor
                 </Link>
               </Button>
             </div>

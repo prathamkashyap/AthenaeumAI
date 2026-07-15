@@ -1,0 +1,250 @@
+openapi: 3.0.0
+info:
+  title: AthenaeumAI API
+  description: Robust API documentation for AthenaeumAI Backend
+  version: 2.0.0
+servers:
+  - url: http://localhost:5000/api/v1
+    description: V1 API
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        requestId:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+    Quiz:
+      type: object
+      properties:
+        _id:
+          type: string
+        title:
+          type: string
+        difficulty:
+          type: string
+        questionCount:
+          type: integer
+    StudyMaterial:
+      type: object
+      properties:
+        _id:
+          type: string
+        title:
+          type: string
+        sizeBytes:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+security:
+  - cookieAuth: []
+paths:
+  /health:
+    get:
+      summary: Health check & diagnostics
+      security: []
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  uptime:
+                    type: number
+                  mongoConnected:
+                    type: boolean
+                  redisConnected:
+                    type: boolean
+  /auth/signup:
+    post:
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: Created successfully
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      summary: Authenticate user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Logged in successfully
+        '401':
+          description: Invalid credentials
+  /auth/me:
+    get:
+      summary: Get current authenticated user
+      responses:
+        '200':
+          description: User object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+  /auth/profile:
+    put:
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '200':
+          description: Updated profile
+  /quiz/history:
+    get:
+      summary: Get user quiz history
+      responses:
+        '200':
+          description: List of quizzes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quizzes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Quiz'
+  /quiz/generate:
+    post:
+      summary: Generate quiz from PDF
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                pdf:
+                  type: string
+                  format: binary
+                difficulty:
+                  type: string
+                count:
+                  type: integer
+      responses:
+        '200':
+          description: Generated quiz
+  /library:
+    get:
+      summary: Get user study materials
+      responses:
+        '200':
+          description: List of materials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  materials:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StudyMaterial'
+  /flashcards:
+    get:
+      summary: Get all flashcard decks
+      responses:
+        '200':
+          description: Decks retrieved
+    post:
+      summary: Create new flashcard deck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sourceMaterialId:
+                  type: string
+                topic:
+                  type: string
+                difficulty:
+                  type: string
+      responses:
+        '201':
+          description: Deck created
+  /review-queue:
+    get:
+      summary: Get items due for review
+      responses:
+        '200':
+          description: Review queue
+  /analytics:
+    get:
+      summary: Get user progress analytics
+      responses:
+        '200':
+          description: Analytics data

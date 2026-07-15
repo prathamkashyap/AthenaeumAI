@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useQuiz, Question } from "@/context/QuizContext";
+import { useQuiz, Question, MistakeAnalysis } from "@/context/QuizContext";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -100,8 +100,9 @@ const AttemptAssessment = () => {
     });
 
     // Save attempt to backend
+    let savedAttempt: { mistakeAnalyses?: MistakeAnalysis[] } | void;
     if (currentQuiz?.quizId) {
-      await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers);
+      savedAttempt = await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers, timeElapsed);
     }
 
     setResult({
@@ -112,6 +113,7 @@ const AttemptAssessment = () => {
       difficulty,
       title,
       quizId: currentQuiz?.quizId || "",
+      mistakeAnalyses: savedAttempt && "mistakeAnalyses" in savedAttempt ? savedAttempt.mistakeAnalyses || [] : [],
     });
 
     navigate(`/assessments/${id}/result`);

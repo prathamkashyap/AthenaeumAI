@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuiz } from "@/context/QuizContext";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/api";
 import {
   CheckCircle2,
   XCircle,
@@ -17,6 +18,9 @@ import {
   Clock,
   Sparkles,
   BookOpen,
+  Layers,
+  Loader2,
+  Download
 } from "lucide-react";
 
 const ResultAssessment = () => {
@@ -24,29 +28,19 @@ const ResultAssessment = () => {
   const { lastResult, clearQuiz } = useQuiz();
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [isCreatingDeck, setIsCreatingDeck] = useState(false);
 
-  if (!lastResult) {
-    return (
-      <AppLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="text-center space-y-4 animate-fade-in">
-            <Trophy className="h-10 w-10 text-muted-foreground mx-auto" />
-            <p className="text-muted-foreground">No results available</p>
-            <Button
-              variant="outline"
-              onClick={() => navigate("/assessments/create")}
-              className="border-accent text-accent hover:bg-accent/10"
-            >
-              Take a Quiz
-            </Button>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  const { score, total, answers, questions, difficulty, title, quizId } = lastResult;
-  const percentage = Math.round((score / total) * 100);
+  const {
+    score = 0,
+    total = 1,
+    answers = [],
+    questions = [],
+    difficulty = "Easy",
+    title = "Quiz",
+    quizId = "",
+    mistakeAnalyses = [],
+  } = lastResult || {};
+  const percentage = Math.round((score / Math.max(total, 1)) * 100);
 
   // Performance analysis
   const { grade, gradeColor, message } = useMemo(() => {
@@ -80,12 +74,89 @@ const ResultAssessment = () => {
     }));
   }, [questions, answers]);
 
+  const mistakeByQuestion = useMemo(() => {
+    const map = new Map<number, typeof mistakeAnalyses[number]>();
+    mistakeAnalyses.forEach((analysis) => map.set(analysis.questionIndex, analysis));
+    return map;
+  }, [mistakeAnalyses]);
+
   const displayedQuestions = showAll ? questions : questions.slice(0, 5);
+
+  const createFlashcardsFromQuiz = async () => {
+    setIsCreatingDeck(true);
+    try {
+      const response = await apiFetch("/flashcards/generate", {
+        method: "POST",
+        body: JSON.stringify({ sourceType: "quiz", sourceId: quizId, count: 12 }),
+      });
+      if (response.ok) navigate("/flashcards");
+    } finally {
+      setIsCreatingDeck(false);
+    }
+  };
+
+  const exportToCSV = () => {
+    if (!questions || questions.length === 0) return;
+    
+    // Headers: Question, A, B, C, D, Correct Answer, Explanation
+    const headers = ["Question", "Option A", "Option B", "Option C", "Option D", "Correct Answer", "User Answer", "Explanation"];
+    
+    const rows = questions.map((q, i) => {
+      const opts = [
+        q.options[0] || "",
+        q.options[1] || "",
+        q.options[2] || "",
+        q.options[3] || ""
+      ];
+      const correctOpt = String.fromCharCode(65 + q.answer);
+      const userOpt = answers[i] !== undefined ? String.fromCharCode(65 + answers[i]) : "Skipped";
+      
+      return [
+        `"${(q.question || "").replace(/"/g, '""')}"`,
+        `"${opts[0].replace(/"/g, '""')}"`,
+        `"${opts[1].replace(/"/g, '""')}"`,
+        `"${opts[2].replace(/"/g, '""')}"`,
+        `"${opts[3].replace(/"/g, '""')}"`,
+        `"${correctOpt}"`,
+        `"${userOpt}"`,
+        `"${(q.explanation || "").replace(/"/g, '""')}"`
+      ].join(",");
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `quiz_results_${title.replace(/\s+/g, "_")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // SVG ring parameters
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - percentage / 100);
+
+  if (!lastResult) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-4 animate-fade-in">
+            <Trophy className="h-10 w-10 text-muted-foreground mx-auto" />
+            <p className="text-muted-foreground">No results available</p>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/assessments/create")}
+              className="border-accent text-accent hover:bg-accent/10"
+            >
+              Take a Quiz
+            </Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -280,6 +351,22 @@ const ResultAssessment = () => {
                           </p>
                         </div>
                       )}
+
+                      {mistakeByQuestion.has(i) && (
+                        <div className="mt-3 p-3 rounded-lg bg-rose-500/5 border border-rose-500/20">
+                          <p className="text-[11px] uppercase tracking-wider text-rose-300 mb-2 font-medium">
+                            AI Mistake Analysis
+                          </p>
+                          <div className="space-y-2 text-sm text-muted-foreground leading-relaxed">
+                            <p><span className="text-foreground">Misconception:</span> {mistakeByQuestion.get(i)?.misconception}</p>
+                            <p><span className="text-foreground">Clarification:</span> {mistakeByQuestion.get(i)?.clarification}</p>
+                            {mistakeByQuestion.get(i)?.distractorReason && (
+                              <p><span className="text-foreground">Why it looked plausible:</span> {mistakeByQuestion.get(i)?.distractorReason}</p>
+                            )}
+                            <p><span className="text-foreground">Revision:</span> {mistakeByQuestion.get(i)?.revisionSuggestion}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </Card>
@@ -320,6 +407,23 @@ const ResultAssessment = () => {
             className="border-border hover:border-accent hover:text-accent"
           >
             <Home className="h-4 w-4 mr-2" /> Dashboard
+          </Button>
+          {!quizId.startsWith("temp-") && (
+            <Button
+              onClick={createFlashcardsFromQuiz}
+              disabled={isCreatingDeck}
+              className="bg-accent text-primary-foreground hover:bg-accent/90"
+            >
+              {isCreatingDeck ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Layers className="h-4 w-4 mr-2" />}
+              Make Flashcards
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={exportToCSV}
+            className="border-border hover:border-accent hover:text-accent"
+          >
+            <Download className="h-4 w-4 mr-2" /> Export CSV
           </Button>
         </div>
       </div>

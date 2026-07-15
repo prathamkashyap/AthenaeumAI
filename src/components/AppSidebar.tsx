@@ -1,5 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap } from "lucide-react";
+import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap, Bot } from "lucide-react";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, useSidebar,
@@ -10,23 +12,35 @@ const mainNav = [
   { title: "Library", url: "/library", icon: Upload },
   { title: "Assessments", url: "/assessments", icon: BookOpen },
   { title: "Practice", url: "/practice", icon: Layers },
+  { title: "AI Tutor", url: "/tutor", icon: Bot },
   { title: "Question Bank", url: "/question-bank", icon: ScrollText },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
 
-const topics = [
-  { title: "Data Structures", count: 42 },
-  { title: "Operating Systems", count: 28 },
-  { title: "DBMS", count: 35 },
-  { title: "Computer Networks", count: 19 },
-  { title: "Machine Learning", count: 24 },
-];
+interface TopicMasteryItem {
+  topic: string;
+  fullTopic?: string;
+  value: number;
+}
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { pathname } = useLocation();
   const isActive = (path: string) => pathname === path;
+  const [topics, setTopics] = useState<{ title: string; count: number }[]>([]);
+
+  useEffect(() => {
+    apiFetch("/analytics/dashboard")
+      .then((res) => res.ok ? res.json() : Promise.reject())
+      .then((data) => {
+        setTopics(((data.topicMastery || []) as TopicMasteryItem[]).slice(0, 5).map((topic) => ({
+          title: topic.fullTopic || topic.topic,
+          count: topic.value,
+        })));
+      })
+      .catch(() => setTopics([]));
+  }, []);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -79,7 +93,7 @@ export function AppSidebar() {
                         <ScrollText className="h-3.5 w-3.5 text-muted-foreground group-hover:text-accent" />
                         <span className="text-sm">{t.title}</span>
                       </div>
-                      <span className="text-[10px] font-mono text-muted-foreground">{t.count}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">{t.count}%</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}

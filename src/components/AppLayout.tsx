@@ -3,12 +3,16 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { StarryBackground } from "./StarryBackground";
 import { ThemeToggle } from "./ThemeToggle";
-import { Search, Bell, ArrowUp } from "lucide-react";
+import { Search, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/context/AuthContext";
+import { NotificationBell } from "./NotificationBell";
+import { Link } from "react-router-dom";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [showTop, setShowTop] = useState(false);
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 300);
@@ -39,17 +43,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
             <div className="flex items-center gap-3 ml-auto">
               <ThemeToggle />
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-accent">
-                <Bell className="h-4 w-4" />
-              </Button>
+              <NotificationBell />
               <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-border">
                 <div className="text-right">
-                  <p className="text-xs font-medium leading-tight">Pratham Kashyap</p>
-                  <p className="text-[10px] text-muted-foreground leading-tight">B.Tech · Sem 6</p>
+                  <Link to="/profile" className="text-xs font-medium leading-tight hover:text-accent block">
+                    {user?.name || "Learner"}
+                  </Link>
+                  <button
+                    onClick={logout}
+                    className="text-[10px] text-muted-foreground hover:text-accent leading-tight"
+                  >
+                    Sign out
+                  </button>
                 </div>
-                <div className="h-8 w-8 rounded-full bg-gradient-gold flex items-center justify-center text-[11px] font-semibold text-primary-foreground">
-                  PK
-                </div>
+                <Link to="/profile" className="h-8 w-8 rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center text-[11px] font-semibold text-accent hover:bg-accent/25 transition-colors cursor-pointer">
+                  {(user?.name || "AI").split(" ").map((part: string) => part[0]).join("").slice(0, 2).toUpperCase()}
+                </Link>
               </div>
             </div>
           </header>

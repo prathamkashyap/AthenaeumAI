@@ -1,0 +1,156 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx} % Times New Roman font
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{enumitem}
+
+% --- Customizing Colors and Links ---
+\definecolor{primary}{RGB}{41, 128, 185}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primary,
+    filecolor=magenta,      
+    urlcolor=primary,
+    pdftitle={AthenaeumAI: System Architecture and Implementation Report},
+    pdfauthor={Pratham Kashyap}
+}
+
+% --- Formatting Titles ---
+\titleformat{\section}{\Large\bfseries\color{primary}}{\thesection}{1em}{}[\vspace{-0.5em}\rule{\textwidth}{0.4pt}]
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+
+% --- Header and Footer Configuration ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textit{AthenaeumAI Project Report}}
+\lhead{Pratham Kashyap}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\begin{document}
+
+% -------------------------------------------------------------------
+% COVER PAGE
+% -------------------------------------------------------------------
+\begin{titlepage}
+    \centering
+    \vspace*{3cm}
+    
+    {\Huge \bfseries \textcolor{primary}{AthenaeumAI}\par}
+    \vspace{0.5cm}
+    \rule{0.6\textwidth}{1pt}\par
+    \vspace{1cm}
+    {\Large \itshape An Intelligent, AI-Driven Learning and Assessment Platform\par}
+    
+    \vspace{4cm}
+    
+    {\Large \bfseries Pratham Kashyap\par}
+    \vspace{0.5cm}
+    {\large \today\par}
+    
+    \vfill
+    
+    {\normalsize \textit{A comprehensive technical report detailing the system architecture, core functionalities, and integration strategies of the AthenaeumAI platform.}\par}
+\end{titlepage}
+
+\newpage
+
+% -------------------------------------------------------------------
+% ABSTRACT
+% -------------------------------------------------------------------
+\begin{abstract}
+    \noindent \normalsize Modern educational paradigms necessitate highly adaptable and personalized studying methodologies. AthenaeumAI was developed to address this requirement by providing an intelligent software ecosystem capable of dynamically synthesizing exam-style assessments from user-provided documentation. By harnessing the computational reasoning capabilities of Large Language Models (LLMs)—specifically Llama 3 70B—via an optimized backend architecture, the platform significantly reduces manual preparation time. This report elaborates on the system's core capabilities, its underlying modular architecture, and the systematic processes involved in its deployment and utilization.
+\end{abstract}
+
+\vspace{1cm}
+\tableofcontents
+\newpage
+
+\onehalfspacing
+
+% -------------------------------------------------------------------
+% SECTION 1: Introduction
+% -------------------------------------------------------------------
+\section{Introduction}
+The transition toward digital learning environments has highlighted the need for intelligent tools that can autonomously adapt to specific curriculum requirements. Traditional learning management systems often rely on static question banks, which lack the flexibility required for personalized education. AthenaeumAI bridges this gap by acting as a generative learning assistant. It allows users to upload unstructured textual data (e.g., PDF lecture notes, syllabi) and autonomously orchestrates the generation of coherent, contextually accurate assessments. This document serves as a technical overview of the platform, detailing its practical applications and the architectural decisions that ensure its reliability and performance.
+
+% -------------------------------------------------------------------
+% SECTION 2: Core Functionalities and Use Cases
+% -------------------------------------------------------------------
+\section{Core Functionalities and Use Cases}
+AthenaeumAI is designed to optimize the student revision pipeline through several distinct, integrated features.
+
+\subsection{Automated Content Ingestion and Quiz Synthesis}
+At the core of the platform is the ability to ingest raw PDF files. The system implements a robust parsing algorithm that extracts text, cleanses formatting artifacts, and segments the data into manageable chunks. These chunks are processed by the AI model to generate multiple-choice questions. The system allows users to explicitly dictate the cognitive complexity of the output (Recall, Application, or Critical Thinking) to match their study goals.
+
+\subsection{Continuous Performance Analytics}
+Tracking longitudinal performance is essential for effective studying. The platform aggregates user assessment data into a centralized dashboard. Utilizing advanced data visualization libraries, it presents mastery trends over time, radar charts mapping subject-specific proficiencies, and discrete metrics highlighting weak topics that require immediate attention.
+
+\subsection{Immersive and Responsive User Interface}
+The graphical interface is engineered to promote prolonged engagement without cognitive fatigue. It features state-driven micro-animations, active recall flashcards for rapid revision, and dynamic thematic toggles (including "Starry", "Academia", and "Light" modes). Immediate feedback loops provide detailed explanations for every generated question, facilitating an active learning cycle.
+
+% -------------------------------------------------------------------
+% SECTION 3: System Architecture and Implementation Strategy
+% -------------------------------------------------------------------
+\section{System Architecture and Implementation Strategy}
+The platform utilizes a decoupled, full-stack architecture to maintain separation of concerns, ensuring that the heavy computational load of AI orchestration does not impede the responsiveness of the client application.
+
+\subsection{Client-Side Application (Frontend)}
+The frontend is constructed as a Single Page Application (SPA) utilizing React 18 and TypeScript.
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{UI Framework:} Tailwind CSS provides a utility-first foundation, heavily augmented by Shadcn UI and Radix primitives to guarantee accessibility and cross-browser consistency.
+    \item \textbf{State Management:} The React Context API is utilized for global state distribution, specifically managing transient quiz data and historical user sessions, while React Router handles client-side routing.
+    \item \textbf{Data Visualization:} Recharts is employed to render complex SVGs for the analytics dashboard, ensuring that data presentation remains performant and responsive across varied device viewports.
+\end{itemize}
+
+\subsection{Server-Side Application (Backend)}
+The backend is a Node.js runtime environment utilizing the Express framework to expose a RESTful API.
+\begin{itemize}[leftmargin=1.5cm]
+    \item \textbf{Data Persistence layer:} MongoDB acts as the primary NoSQL data store, interfaced via Mongoose Object Data Modeling (ODM). It manages the persistence of user objects, quiz schemas, and historical attempt metadata.
+    \item \textbf{Document Processing Pipeline:} File uploads are buffered securely in memory using Multer. The \texttt{pdf-parse-fixed} utility handles extraction, and a custom chunking algorithm ensures the resulting text adheres strictly to the context window limits of the downstream LLM.
+    \item \textbf{AI Orchestration:} The backend securely manages cryptographic keys and communicates with the Groq API. It utilizes the Llama 3 70B model, leveraging system-level prompt engineering to strictly enforce JSON-formatted output, ensuring deterministic parsing by the client.
+    \item \textbf{Security Constraints:} Express Rate Limiting middleware is applied specifically to the generation endpoints to mitigate potential Denial of Service (DoS) attacks and manage API consumption costs.
+\end{itemize}
+
+\subsection{Deployment and Execution Workflow}
+Deploying the system requires a synchronized initialization of both environments:
+\begin{enumerate}[leftmargin=1.5cm]
+    \item \textbf{Environment Configuration:} The system requires explicit definition of environment variables (\texttt{MONGODB\_URI}, \texttt{GROQ\_API\_KEY}) within the server directory to establish external connections.
+    \item \textbf{Server Initialization:} The Node process is initialized, establishing the database connection pool, loading the routing middleware, and binding to the specified port.
+    \item \textbf{Client Compilation:} The Vite bundler compiles the TypeScript and PostCSS assets, serving the optimized static files to the client browser and establishing the connection to the backend API.
+\end{enumerate}
+
+% -------------------------------------------------------------------
+% SECTION 4: Conclusion
+% -------------------------------------------------------------------
+\section{Conclusion}
+AthenaeumAI successfully demonstrates the integration of state-of-the-art Large Language Models into a robust, full-stack web application. By automating the most labor-intensive aspects of academic preparation—namely, the creation of accurate, varied, and challenging assessments—the platform significantly enhances the efficiency of the modern student. The modular architecture established in this iteration provides a highly scalable foundation for future enhancements, including multi-modal document support, collaborative study sessions, and deeper pedagogical analytics.
+
+% -------------------------------------------------------------------
+% ENDING PAGE
+% -------------------------------------------------------------------
+\newpage
+\thispagestyle{empty}
+\vspace*{8cm}
+\begin{center}
+    \rule{0.4\textwidth}{1pt}\par
+    \vspace{0.5cm}
+    {\Large \bfseries \textcolor{primary}{End of Document}\par}
+    \vspace{0.5cm}
+    {\itshape This technical report was prepared for the academic review and structural documentation of the AthenaeumAI platform.\par}
+    \vspace{1cm}
+    \rule{0.4\textwidth}{1pt}\par
+\end{center}
+
+\end{document}

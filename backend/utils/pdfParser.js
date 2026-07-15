@@ -1,5 +1,6 @@
 import fs from "fs";
 import pdf from "pdf-parse-fixed";
+import logger from "../utils/logger.js";
 
 function cleanText(text) {
   return text
@@ -10,17 +11,17 @@ function cleanText(text) {
 
 export const extractTextFromPDF = async (filePath) => {
   try {
-    console.log("Reading file from:", filePath);
+    logger.info("Reading file from path for parsing:", { filePath });
 
     const dataBuffer = fs.readFileSync(filePath);
 
     const data = await pdf(dataBuffer);
 
-    console.log("PDF parsed successfully");
+    logger.info("PDF parsed successfully", { filePath });
 
-    return data.text;
+    return cleanText(data.text);
   } catch (err) {
-    console.error("REAL PDF ERROR:", err);
+    logger.error("Error during PDF parsing:", err);
     throw new Error("Failed to parse PDF");
   }
 };

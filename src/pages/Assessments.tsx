@@ -14,7 +14,12 @@ import {
   ChevronRight,
   Sparkles,
   FileText,
+  Search as SearchIcon,
+  Filter
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiFetch } from "@/lib/api";
 
 interface QuizSummary {
   _id: string;
@@ -28,23 +33,33 @@ interface QuizSummary {
   createdAt: string;
 }
 
-const API_BASE = "http://localhost:3001/api/quiz";
+const API_BASE = "/quiz";
+
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message : fallback;
 
 const Assessments = () => {
   const navigate = useNavigate();
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [difficulty, setDifficulty] = useState("all");
 
   useEffect(() => {
     const fetchHistory = async () => {
+      setIsLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/history`);
+        const queryParams = new URLSearchParams();
+        if (search) queryParams.append("search", search);
+        if (difficulty !== "all") queryParams.append("difficulty", difficulty);
+
+        const res = await apiFetch(`${API_BASE}/history?${queryParams.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch");
         const data = await res.json();
         setQuizzes(data.quizzes || []);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, "Failed to fetch assessments"));
         setQuizzes([]);
       } finally {
         setIsLoading(false);
@@ -52,7 +67,7 @@ const Assessments = () => {
     };
 
     fetchHistory();
-  }, []);
+  }, [search, difficulty]);
 
   const diffColors: Record<string, string> = {
     Easy: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
@@ -104,6 +119,33 @@ const Assessments = () => {
               <Plus className="h-4 w-4 mr-2" /> New Assessment
             </Link>
           </Button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search assessments..."
+              className="pl-9 h-10 bg-card border-border shadow-sm"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Select value={difficulty} onValueChange={setDifficulty}>
+            <SelectTrigger className="w-full sm:w-[180px] h-10 bg-card border-border shadow-sm">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <SelectValue placeholder="Difficulty" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Difficulties</SelectItem>
+              <SelectItem value="Easy">Easy</SelectItem>
+              <SelectItem value="Medium">Medium</SelectItem>
+              <SelectItem value="Hard">Hard</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Loading State */}

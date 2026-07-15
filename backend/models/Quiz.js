@@ -27,6 +27,11 @@ const questionSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  cognitiveLevel: {
+    type: String,
+    enum: ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"],
+    default: "Remember",
+  },
 });
 
 const attemptSchema = new mongoose.Schema({
@@ -50,6 +55,18 @@ const attemptSchema = new mongoose.Schema({
 
 const quizSchema = new mongoose.Schema(
   {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    studyMaterial: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "StudyMaterial",
+      default: null,
+      index: true,
+    },
     title: {
       type: String,
       default: "Untitled Quiz",
@@ -78,11 +95,21 @@ const quizSchema = new mongoose.Schema(
     },
     questions: [questionSchema],
     attempts: [attemptSchema],
+    deletedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+quizSchema.pre(/^find/, function (next) {
+  this.where({ deletedAt: null });
+  if (typeof next === "function") next();
+});
 
 // Virtual for best score
 quizSchema.virtual("bestScore").get(function () {

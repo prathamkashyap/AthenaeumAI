@@ -1,0 +1,201 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: athenaeum_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    healthcheck:
+      # Mongo readiness only. Replica-set initialization belongs to mongo-init,
+      # so this remains safe to run repeatedly and never mutates database state.
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --host 127.0.0.1 --port 27017 --eval 'quit(db.adminCommand({ ping: 1 }).ok === 1 ? 0 : 1)'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: always
+
+  mongo-init:
+    image: mongo:6.0
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mongosh --quiet --host mongodb --port 27017 --eval '
+          const replicaConfig = {
+            _id: "rs0",
+            members: [{ _id: 0, host: "mongodb:27017" }],
+          };
+
+          let wasInitialized = true;
+          try {
+            rs.status();
+          } catch (error) {
+            if (error.codeName !== "NotYetInitialized") {
+              print(error);
+              quit(1);
+            }
+            wasInitialized = false;
+            try {
+              const result = rs.initiate(replicaConfig);
+              if (result.ok !== 1) {
+                printjson(result);
+                quit(1);
+              }
+            } catch (initError) {
+              if (initError.codeName !== "AlreadyInitialized") {
+                print(initError);
+                quit(1);
+              }
+            }
+          }
+
+          // A previous Compose version initialized rs0 with 127.0.0.1. Repair
+          // that persisted single-node configuration so other containers can
+          // discover the member through Docker DNS.
+          if (wasInitialized) {
+            const currentConfig = rs.conf();
+            if (
+              currentConfig.members.length === 1 &&
+              currentConfig.members[0].host !== "mongodb:27017"
+            ) {
+              currentConfig.members[0].host = "mongodb:27017";
+              const result = rs.reconfig(currentConfig, { force: true });
+              if (result.ok !== 1) {
+                printjson(result);
+                quit(1);
+              }
+            }
+          }
+
+          for (let attempt = 0; attempt < 30; attempt += 1) {
+            if (db.hello().isWritablePrimary) {
+              quit(0);
+            }
+            sleep(1000);
+          }
+
+          print("Replica set did not elect a primary within 30 seconds.");
+          quit(1);
+        '
+
+  redis:
+    image: redis:7-alpine
+    container_name: athenaeum_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+    container_name: athenaeum_backend
+    ports:
+      # Keep the conventional API endpoint by default. Override the host-side
+      # port when another local process (such as macOS AirPlay Receiver) owns it.
+      - "${BACKEND_HOST_PORT:-5000}:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/athenaeum?replicaSet=rs0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Make sure to copy your other ENV vars like GROQ_API_KEY from .env
+    env_file:
+      - ./backend/.env
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5000/api/v1/health/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: always
+
+  worker:
+    build:
+      context: ./backend
+    container_name: athenaeum_worker
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongodb:27017/athenaeum?replicaSet=rs0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - ./backend/.env
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: ["node", "worker.js"]
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    healthcheck:
+      # Worker has no HTTP listener; PID 1 being signalable confirms its BullMQ
+      # process remained alive after connecting to MongoDB and Redis.
+      test: ["CMD-SHELL", "node -e \"process.kill(1, 0)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: always
+
+  frontend:
+    build:
+      context: .
+    container_name: athenaeum_frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - VITE_API_ROOT=http://localhost:${BACKEND_HOST_PORT:-5000}/api/v1
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:8080').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: always
+
+volumes:
+  mongo_data:
