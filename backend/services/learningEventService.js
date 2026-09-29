@@ -25,7 +25,7 @@ export const recordLearningEvent = async ({
   });
 };
 
-export const recordAttemptEvents = async ({ userId, quiz, attempt }) => {
+export const recordAttemptEvents = async ({ userId, quiz, attempt, session }) => {
   const events = attempt.answers.map((answer) => ({
     user: userId,
     subject: quiz.subject || "",
@@ -47,5 +47,5 @@ export const recordAttemptEvents = async ({ userId, quiz, attempt }) => {
   }));
 
   if (!events.length) return [];
-  return LearningEvent.insertMany(events);
+  return LearningEvent.insertMany(events, session ? { session } : {});
 };

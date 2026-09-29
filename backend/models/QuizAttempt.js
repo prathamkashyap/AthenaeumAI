@@ -73,6 +73,23 @@ const quizAttemptSchema = new mongoose.Schema(
       type: [mistakeAnalysisSchema],
       default: [],
     },
+    // Durable idempotency state for the SYNC_ATTEMPT background job. The
+    // attempt document is the only place that needs to remember whether this
+    // logical attempt's learner effects have already been applied, so no
+    // separate idempotency collection is required. The status is flipped in the
+    // same transaction that writes the effects, so a crash can never leave an
+    // attempt marked processed without its learner update.
+    sync: {
+      status: {
+        type: String,
+        enum: ["pending", "processed"],
+        default: "pending",
+      },
+      appliedAt: {
+        type: Date,
+        default: null,
+      },
+    },
   },
   { timestamps: true }
 );

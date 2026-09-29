@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import connectDB from "./config/database.js";
 import logger from "./utils/logger.js";
+import { runInTransaction } from "./utils/dbTransactions.js";
 import { indexStudyMaterialChunks } from "./services/embeddingService.js";
 import { updateUserProgressFromAttempt } from "./services/progressService.js";
 import { recordAttemptEvents } from "./services/learningEventService.js";
@@ -41,6 +42,41 @@ const requireJobValue = (value, label) => {
     throw new Error(`Background job is missing ${label}.`);
   }
   return value;
+};
+
+export const isAttemptSynced = (attempt) => attempt?.sync?.status === "processed";
+
+/**
+ * Durably claims a quiz attempt for the application of its learner effects.
+ *
+ * The claim is a conditional update on the attempt document itself, so MongoDB
+ * guarantees that exactly one caller can move it away from "pending". Because it
+ * runs inside the caller's transaction, a crash anywhere in the effect
+ * application rolls the claim back with it and the next delivery simply claims
+ * the attempt again.
+ */
+const claimAttemptForSync = (attemptId, session) =>
+  QuizAttempt.findOneAndUpdate(
+    { _id: attemptId, "sync.status": { $ne: "processed" } },
+    { $set: { "sync.status": "processed", "sync.appliedAt": new Date() } },
+    { new: true, session }
+  );
+
+/**
+ * Applies one logical quiz attempt to the learner exactly once.
+ *
+ * Returns true when this call applied the effects, false when the attempt had
+ * already been applied and the delivery was therefore a no-op.
+ */
+export const syncAttemptOnce = async ({ attempt, quiz, userId }) => {
+  return runInTransaction(async (session) => {
+    const claimed = await claimAttemptForSync(attempt._id, session);
+    if (!claimed) return false;
+
+    await updateUserProgressFromAttempt({ userId, quiz, attempt, session });
+    await recordAttemptEvents({ userId, quiz, attempt, session });
+    return true;
+  });
 };
 
 export const processBackgroundJob = async (job) => {
@@ -80,21 +116,53 @@ export const processBackgroundJob = async (job) => {
       throw new Error(`Quiz attempt ${attemptId} does not belong to user ${userId}.`);
     }
 
-    await updateUserProgressFromAttempt({ userId, quiz, attempt });
-    await recordAttemptEvents({ userId, quiz, attempt });
-    if (attempt.score < attempt.total) {
-      const mistakeAnalyses = attempt.mistakeAnalyses?.length
-        ? attempt.mistakeAnalyses
-        : await analyzeMistakesForAttempt({
-          quiz,
-          normalizedAnswers: attempt.answers,
-          limit: 5,
-        });
+    // Cheap pre-check that keeps a redelivery from opening a transaction. It is
+    // only an optimisation: the claim inside syncAttemptOnce is the correctness
+    // boundary, so a stale read here can never skip an unapplied attempt.
+    if (isAttemptSynced(attempt)) {
+      return {
+        type,
+        attemptId: String(attemptId),
+        quizId: String(quizId),
+        applied: false,
+        duplicate: true,
+      };
+    }
+
+    // Mistake analysis calls the AI provider, so it runs before the transaction
+    // rather than inside it.
+    let mistakeAnalyses = attempt.mistakeAnalyses?.length ? attempt.mistakeAnalyses : null;
+    if (!mistakeAnalyses && attempt.score < attempt.total) {
+      mistakeAnalyses = await analyzeMistakesForAttempt({
+        quiz,
+        normalizedAnswers: attempt.answers,
+        limit: 5,
+      });
+    }
+
+    const applied = await syncAttemptOnce({ attempt, quiz, userId });
+    if (!applied) {
+      return {
+        type,
+        attemptId: String(attemptId),
+        quizId: String(quizId),
+        applied: false,
+        duplicate: true,
+      };
+    }
+
+    if (mistakeAnalyses) {
       await enqueueFailedQuestionItems({ userId, quiz, attempt, mistakeAnalyses });
     }
     await rebuildReviewQueueForUser(userId);
 
-    return { type, attemptId: String(attemptId), quizId: String(quizId) };
+    return {
+      type,
+      attemptId: String(attemptId),
+      quizId: String(quizId),
+      applied: true,
+      duplicate: false,
+    };
   }
 
   if (type === "REBUILD_REVIEW_QUEUE") {
