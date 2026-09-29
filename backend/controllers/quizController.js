@@ -1,4 +1,4 @@
-import { generateQuizFromAI as generateQuiz } from "../services/aiQuizService.js";
+import { generateQuiz } from "../services/quizService.js";
 import { extractTextFromPDF } from "../utils/pdfParser.js";
 import Quiz from "../models/Quiz.js";
 import StudyMaterial from "../models/StudyMaterial.js";
