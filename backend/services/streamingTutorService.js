@@ -1,17 +1,5 @@
-import Groq from "groq-sdk";
 import logger from "../utils/logger.js";
-
-let groq = null;
-
-const getGroqClient = () => {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is not set");
-  }
-  if (!groq) {
-    groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  }
-  return groq;
-};
+import { getAIProvider } from "./aiProvider.js";
 
 export const streamTutorResponse = async ({
   question,
@@ -28,7 +16,7 @@ Similarity: ${context.score}
 Text: ${context.chunkText}`
   )).join("\n\n");
 
-  const stream = await getGroqClient().chat.completions.create({
+  const stream = await getAIProvider().stream({
     model: "llama-3.3-70b-versatile",
     messages: [
       {
@@ -78,8 +66,7 @@ ${JSON.stringify(flashcards, null, 2)}
       },
     ],
     temperature: 0.2,
-    max_tokens: 2500,
-    stream: true,
+    maxTokens: 2500,
   });
 
   return stream;
