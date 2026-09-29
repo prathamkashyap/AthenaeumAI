@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { api, authHeaders, pollJobUntilNotPending, probeMongoDeployment, signup } from './helpers/api';
+import {
+  api,
+  authHeaders,
+  pollJobUntilNotPending,
+  pollJobUntilTerminal,
+  probeMongoDeployment,
+  signup,
+} from './helpers/api';
 
 /**
  * E2E — the asynchronous job contract, over real HTTP and a real database.
@@ -81,6 +88,33 @@ const seedQuiz = async (userId: string, count = 3) => {
 
   await client.close();
   return { id: insertedId.toString(), questions };
+};
+
+/**
+ * Reads a persisted document straight from the test database.
+ *
+ * Used by the real-queue test to check that the completed job points at a real
+ * record rather than at an id the application merely claimed to have used.
+ */
+const readPersisted = async (collection: string, id: string) => {
+  const { createRequire } = await import('module');
+  const backendRequire = createRequire(
+    new URL('../../backend/package.json', import.meta.url),
+  );
+  const { MongoClient, ObjectId } = backendRequire('mongodb');
+
+  const uri =
+    process.env.MONGODB_URI_TEST || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/athenaeumAI_e2e';
+  const client = new MongoClient(uri);
+  await client.connect();
+  const db = client.db(new URL(uri).pathname.replace(/^\//, '') || 'athenaeumAI_e2e');
+
+  const document = await db
+    .collection(collection)
+    .findOne({ _id: new ObjectId(id) });
+
+  await client.close();
+  return document;
 };
 
 /** Submits an attempt over real HTTP and returns the tracked job id. */
@@ -366,19 +400,48 @@ describeRealQueue('E. Real BullMQ lifecycle', () => {
   test('a job runs on a real worker and reaches completed', async ({ request }) => {
     const owner = await signup(request, 'real-queue');
     const quiz = await seedQuiz(owner.userId);
-    const { jobId } = await submitAttempt(request, owner.token, quiz);
+    const { jobId, body } = await submitAttempt(request, owner.token, quiz, { withBody: true });
 
     const initial = await request.get(api(`/jobs/${jobId}`), { headers: authHeaders(owner.token) });
     // Accepted by a live queue, so the job must legitimately be non-failed first.
     expect(['queued', 'running', 'completed']).toContain((await initial.json()).status);
 
-    const { job, observed } = await pollJobUntilTerminal(request, owner.token, jobId, { timeoutMs: 60_000 });
+    // The poll budget has to sit inside the test timeout, or the polling
+    // helper's diagnostic — which names the states it actually observed and is
+    // the only thing that distinguishes "no worker ran" from "the worker is
+    // stuck on an earlier job" — is never printed, because Playwright kills the
+    // test first and reports a bare timeout instead.
+    const { job, observed } = await pollJobUntilTerminal(request, owner.token, jobId, { timeoutMs: 20_000 });
 
     expect(observed.length).toBeGreaterThan(0);
+    // The worker declares no readiness URL, so this suite cannot assert that a
+    // worker process came up. It does not need to: nothing but a real worker can
+    // move a job to `completed`, and if no worker runs this test fails on the
+    // polling deadline, whose error names the states actually observed.
     expect(job.status).toBe('completed');
     expect(job.completedAt).toBeTruthy();
     expect(job.error).toBeNull();
     // The worker recorded that it really ran, rather than the job ageing out.
     expect(job.startedAt).toBeTruthy();
+
+    // The completed job must describe the work that actually happened, not an id
+    // the application echoed back. The attempt the client submitted is the
+    // attempt the job names, and the quiz it was answered against is the quiz
+    // that was seeded.
+    expect(job.resource.attemptId).toBe(body.attemptId);
+    expect(job.resource.quizId).toBe(quiz.id);
+    expect(job.resource.materialId).toBeNull();
+
+    // And the record the job points at is really there, owned by this learner.
+    const attempt = await readPersisted('quizattempts', job.resource.attemptId);
+    expect(attempt, 'the completed job points at a real persisted attempt').not.toBeNull();
+    expect(attempt!.user.toString()).toBe(owner.userId);
+    expect(attempt!.quiz.toString()).toBe(quiz.id);
+
+    // The strongest evidence that a real worker did real work: the durable
+    // SYNC_ATTEMPT claim from Task 7B was committed by the real transaction,
+    // inside a real replica set. Nothing short of a running worker can set this.
+    expect(attempt!.sync?.status).toBe('processed');
+    expect(attempt!.sync?.appliedAt).toBeTruthy();
   });
 });
