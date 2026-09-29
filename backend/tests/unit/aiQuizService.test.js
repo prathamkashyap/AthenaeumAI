@@ -18,7 +18,12 @@ import {
   createHangingAIProvider,
   createTimeoutAIProvider,
 } from "../mocks/mockAIProvider.js";
-import { setAIProvider, getAIProvider, resetAIProvider } from "../../services/aiProvider.js";
+import {
+  setAIProvider,
+  getAIProvider,
+  resetAIProvider,
+  AI_COMPLETION_TIMEOUT_MS,
+} from "../../services/aiProvider.js";
 
 const {
   generateQuizFromAI,
@@ -52,6 +57,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetAIProvider();
+  jest.useRealTimers();
 });
 
 // ─── The seam itself ──────────────────────────────────────────────────────────
@@ -88,7 +94,12 @@ describe("the provider seam", () => {
   test("an injected provider is used, and resetting restores the real one", async () => {
     const injected = createMockAIProvider([question()]);
     setAIProvider(injected);
-    expect(getAIProvider()).toBe(injected);
+
+    // The seam hands back a bounded wrapper rather than the raw object, so the
+    // proof that the injected provider is the one used is that it is called.
+    expect(getAIProvider()).not.toBe(injected);
+    await expect(generateQuizFromAI(CONTENT, "Easy", 1)).resolves.toHaveLength(1);
+    expect(injected.complete).toHaveBeenCalled();
 
     resetAIProvider();
     const restored = getAIProvider();
@@ -258,19 +269,46 @@ describe("generateQuizFromAI", () => {
     await expect(generateQuizFromAI(CONTENT, "Medium", 5)).resolves.toEqual([]);
   });
 
-  test("a provider that never settles is not currently bounded by the service", async () => {
-    // Recorded as a known gap rather than asserted as intended behaviour: there
-    // is no timeout anywhere in the AI layer, so a hung upstream holds the
-    // request open indefinitely. Bounding this belongs to the operational
-    // hardening task.
+  test("a provider that never settles is bounded by the seam and degrades as a failure", async () => {
+    // The production chain end to end: this service -> provider seam -> hanging
+    // provider -> timeout boundary -> the service's existing per-chunk failure
+    // path. Before the boundary existed this call stayed pending forever.
+    jest.useFakeTimers();
     useProvider(createHangingAIProvider());
 
-    const outcome = await Promise.race([
-      generateQuizFromAI("short text", "Medium", 5).then(() => "settled", () => "settled"),
-      new Promise((resolve) => { setTimeout(() => resolve("still-pending"), 50); }),
-    ]);
+    const pending = generateQuizFromAI(CONTENT, "Medium", 5);
+    const settled = pending.then(
+      (value) => ({ status: "resolved", value }),
+      (error) => ({ status: "rejected", error }),
+    );
 
-    expect(outcome).toBe("still-pending");
+    // Pending before the boundary, so the assertion below is not passing early.
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS - 1);
+    expect(await Promise.race([settled, Promise.resolve("still-pending")]))
+      .toBe("still-pending");
+
+    // The service requests up to three chunks sequentially and each gets its own
+    // boundary, so the whole call needs one window per chunk before it can finish.
+    await jest.advanceTimersByTimeAsync(3 * AI_COMPLETION_TIMEOUT_MS);
+    const outcome = await settled;
+
+    // Bounded, and degraded exactly as any other provider failure already is:
+    // the per-chunk guard turns it into no questions rather than a rejection.
+    expect(outcome.status).toBe("resolved");
+    expect(outcome.value).toEqual([]);
+  });
+
+  test("a bounded timeout leaves no timer behind once the service has finished", async () => {
+    jest.useFakeTimers();
+    useProvider(createHangingAIProvider());
+
+    const pending = generateQuizFromAI(CONTENT, "Medium", 5);
+    // A few milliseconds past the last boundary, since the final chunk's timer is
+    // armed mid-window and lands exactly on its end.
+    await jest.advanceTimersByTimeAsync(3 * AI_COMPLETION_TIMEOUT_MS + 10);
+    await expect(pending).resolves.toEqual([]);
+
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
 
@@ -332,6 +370,30 @@ describe("generateFlashcardsFromAI", () => {
     useProvider(createFailingAIProvider(new Error("upstream unavailable")));
 
     await expect(generateFlashcardsFromAI(longEnough, 5)).rejects.toThrow("upstream unavailable");
+  });
+
+  test("a timeout is a provider failure and keeps propagating", async () => {
+    // Flashcards have no fallback of their own, so the bounded timeout must still
+    // surface as a rejection rather than being swallowed anywhere.
+    jest.useFakeTimers();
+    useProvider(createHangingAIProvider());
+
+    const pending = generateFlashcardsFromAI(longEnough, 5);
+    const settled = pending.then(
+      (value) => ({ status: "resolved", value }),
+      (error) => ({ status: "rejected", error }),
+    );
+
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS - 1);
+    expect(await Promise.race([settled, Promise.resolve("still-pending")]))
+      .toBe("still-pending");
+
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS + 10);
+    const outcome = await settled;
+
+    expect(outcome.status).toBe("rejected");
+    expect(outcome.error.code).toBe("AI_PROVIDER_TIMEOUT");
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
 
@@ -517,5 +579,30 @@ describe("generateTutorResponseFromAI", () => {
     useProvider(createFailingAIProvider(new Error("tutor upstream down")));
 
     await expect(generateTutorResponseFromAI(tutorArgs)).rejects.toThrow("tutor upstream down");
+  });
+
+  test("a timeout is a provider failure and keeps propagating", async () => {
+    // Non-streaming tutoring has no fallback, so the bounded timeout must surface
+    // as a rejection exactly as any other provider failure does.
+    jest.useFakeTimers();
+    useProvider(createHangingAIProvider());
+
+    const pending = generateTutorResponseFromAI(tutorArgs);
+    const settled = pending.then(
+      (value) => ({ status: "resolved", value }),
+      (error) => ({ status: "rejected", error }),
+    );
+
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS - 1);
+    expect(await Promise.race([settled, Promise.resolve("still-pending")]))
+      .toBe("still-pending");
+
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS + 10);
+    const outcome = await settled;
+
+    expect(outcome.status).toBe("rejected");
+    expect(outcome.error.code).toBe("AI_PROVIDER_TIMEOUT");
+    expect(outcome.error.message).not.toMatch(/groq|api[_-]?key/i);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

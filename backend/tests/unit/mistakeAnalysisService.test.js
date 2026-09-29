@@ -13,7 +13,11 @@ import {
   createFailingAIProvider,
   createHangingAIProvider,
 } from "../mocks/mockAIProvider.js";
-import { setAIProvider, resetAIProvider } from "../../services/aiProvider.js";
+import {
+  setAIProvider,
+  resetAIProvider,
+  AI_COMPLETION_TIMEOUT_MS,
+} from "../../services/aiProvider.js";
 
 const { analyzeMistakesForAttempt } = await import("../../services/mistakeAnalysisService.js");
 
@@ -51,6 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetAIProvider();
+  jest.useRealTimers();
 });
 
 describe("analyzeMistakesForAttempt", () => {
@@ -170,17 +175,33 @@ describe("analyzeMistakesForAttempt", () => {
     expect(JSON.stringify(analysis)).not.toContain("undefined");
   });
 
-  test("a model that never settles currently holds the request open", async () => {
-    // Recorded as a known gap: `analyzeMistakesForAttempt` has no timeout of its
-    // own, so a hung upstream also blocks the fallback. Bounding this belongs to
-    // the operational hardening task.
+  test("a model that never settles is bounded and falls back deterministically", async () => {
+    // The production chain the SYNC_ATTEMPT worker depends on: this service ->
+    // provider seam -> hanging provider -> timeout boundary -> the existing
+    // deterministic fallback. Before the boundary this request stayed open
+    // forever and the learner got no analysis at all.
+    jest.useFakeTimers();
     setAIProvider(createHangingAIProvider());
 
-    const outcome = await Promise.race([
-      run().then(() => "settled", () => "settled"),
-      new Promise((resolve) => { setTimeout(() => resolve("still-pending"), 50); }),
-    ]);
+    const pending = run();
+    const settled = pending.then(
+      (value) => ({ status: "resolved", value }),
+      (error) => ({ status: "rejected", error }),
+    );
 
-    expect(outcome).toBe("still-pending");
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS - 1);
+    expect(await Promise.race([settled, Promise.resolve("still-pending")]))
+      .toBe("still-pending");
+
+    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS + 10);
+    const outcome = await settled;
+
+    // Bounded, and the timeout is an ordinary provider failure, so the service
+    // resolves with the same fallback it already used for any other failure.
+    expect(outcome.status).toBe("resolved");
+    expect(outcome.value).toHaveLength(1);
+    expect(outcome.value[0].misconception).toContain("concept boundary");
+    expect(outcome.value[0].clarification).toBe(QUIZ.questions[1].explanation);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
