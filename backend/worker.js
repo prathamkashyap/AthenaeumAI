@@ -7,6 +7,7 @@ import path from "path";
 import connectDB from "./config/database.js";
 import logger from "./utils/logger.js";
 import { runInTransaction } from "./utils/dbTransactions.js";
+import { markJobRunning, markJobCompleted, markJobFailed } from "./services/backgroundJobService.js";
 import { indexStudyMaterialChunks } from "./services/embeddingService.js";
 import { updateUserProgressFromAttempt } from "./services/progressService.js";
 import { recordAttemptEvents } from "./services/learningEventService.js";
@@ -78,6 +79,26 @@ export const syncAttemptOnce = async ({ attempt, quiz, userId }) => {
     return true;
   });
 };
+
+/**
+ * Reduces an internal failure to something safe to store on, and return from, a
+ * job record. The underlying cause is already logged by the worker; the client
+ * only ever learns that the background work failed.
+ */
+export const clientSafeFailure = (job) => ({
+  code: "JOB_FAILED",
+  message: `Background work of type ${job.data?.type ?? "unknown"} did not complete.`,
+});
+
+/**
+ * Whether this attempt is the job's last one under BullMQ's own retry budget.
+ *
+ * Only the final failure is an outcome: an intermediate attempt that will be
+ * retried must not be recorded as the result, or the status would report a
+ * failure for work that is still going to run.
+ */
+export const isFinalJobAttempt = (job) =>
+  (job?.attemptsMade || 0) >= (job?.opts?.attempts ?? 1);
 
 export const processBackgroundJob = async (job) => {
   const { type, data } = job?.data || {};
@@ -174,24 +195,61 @@ export const processBackgroundJob = async (job) => {
   throw new Error(`Unknown background job type: ${type}`);
 };
 
+/**
+ * Runs one job and maintains its application-level status.
+ *
+ * Extracted from the BullMQ worker callback so the tracking behaviour is testable
+ * without a live Redis. The processor is injectable for the same reason; the
+ * default is the real dispatcher.
+ */
+export const runJobWithStatusTracking = async (job, { process = processBackgroundJob } = {}) => {
+  logger.info(`[JobWorker] Starting job ${job.name} (ID: ${job.id})`);
+
+  // Application-level job state is derived from real worker execution, not from
+  // the queue's own bookkeeping, so the status a client reads afterwards still
+  // means something once the request that created the work is long gone.
+  const applicationJobId = job.data?.jobId;
+  if (applicationJobId) await markJobRunning(applicationJobId).catch(() => {});
+
+  let failed = false;
+  try {
+    return await process(job);
+  } catch (error) {
+    failed = true;
+    logger.error(`[JobWorker] Job failed: ${job.name}`, { error: error.message, stack: error.stack });
+    throw error;
+  } finally {
+    if (applicationJobId) {
+      // A success is always terminal: the queue does not retry a job that
+      // finished. Only a failure is gated on the retry budget, so an intermediate
+      // attempt that will be retried is never recorded as the outcome. Neither
+      // transition may overwrite a state that is already terminal.
+      if (!failed) {
+        const settled = await markJobCompleted(applicationJobId).catch(() => null);
+        logger.info(`[JobWorker] Application job settled as ${settled?.status ?? "unchanged"}`, {
+          applicationJobId,
+          bullmqJobId: job.id,
+        });
+      } else if (isFinalJobAttempt(job)) {
+        const settled = await markJobFailed(applicationJobId, clientSafeFailure(job)).catch(() => null);
+        logger.info(`[JobWorker] Application job settled as ${settled?.status ?? "unchanged"}`, {
+          applicationJobId,
+          bullmqJobId: job.id,
+        });
+      }
+    }
+  }
+};
+
 export const startWorker = async () => {
   await connectDB();
   logger.info("🚀 Worker connected to MongoDB");
 
   const redisConnection = createRedisConnection();
 
-  const worker = new Worker(QUEUE_NAME, async (job) => {
-    logger.info(`[JobWorker] Starting job ${job.name} (ID: ${job.id})`);
-
-    try {
-      return await processBackgroundJob(job);
-    } catch (error) {
-      logger.error(`[JobWorker] Job failed: ${job.name}`, { error: error.message, stack: error.stack });
-      throw error;
-    }
-  }, { 
+  const worker = new Worker(QUEUE_NAME, (job) => runJobWithStatusTracking(job), {
     connection: redisConnection,
-    concurrency: 5 
+    concurrency: 5
   });
 
   const queueEvents = new QueueEvents(QUEUE_NAME, { connection: redisConnection });

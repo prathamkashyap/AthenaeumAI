@@ -44,8 +44,40 @@ jest.unstable_mockModule("../../models/StudyMaterial.js", () => ({
 }));
 jest.unstable_mockModule("../../models/QuizAttempt.js", () => ({ default: {} }));
 jest.unstable_mockModule("../../utils/pdfParser.js", () => ({ extractTextFromPDF }));
+// The controller now schedules through the tracked helper, which owns the
+// record-then-enqueue ordering. It is mocked at this boundary so the assertions
+// can observe both the outcome and the arguments the real helper receives.
+// The controller schedules through the tracked helper, which owns the
+// record-then-enqueue ordering. It is mocked at this boundary so the assertions
+// can observe both the outcome and the arguments the real helper receives, and
+// so a queue refusal is modelled the way the real helper models it.
+const createTrackedJob = jest.fn(async ({ type, resource }) => ({
+  _id: "job-1",
+  user: "user-1",
+  type,
+  status: "pending",
+  resource,
+  queueJobId: null,
+}));
+const markTrackedQueued = jest.fn(async () => null);
+const markTrackedNotScheduled = jest.fn(async () => null);
+
+const enqueueTrackedJob = jest.fn(async ({ type, resource, data, deduplicationId, name }) => {
+  const job = await createTrackedJob({ type, resource });
+  try {
+    const queued = await jobQueueEnqueue(name, { type, data, jobId: String(job._id) }, { deduplicationId });
+    await markTrackedQueued();
+    return { job, scheduled: true, error: null };
+  } catch (error) {
+    if (!(error instanceof QueueEnqueueError)) throw error;
+    await markTrackedNotScheduled();
+    return { job, scheduled: false, error };
+  }
+});
+
 jest.unstable_mockModule("../../utils/jobQueue.js", () => ({
   jobQueue: { enqueue: jobQueueEnqueue },
+  enqueueTrackedJob,
 }));
 jest.unstable_mockModule("../../utils/dbTransactions.js", () => ({ runInTransaction }));
 jest.unstable_mockModule("../../config/database.js", () => ({ isDBConnected }));
@@ -212,6 +244,11 @@ describe("the live generation path", () => {
       difficulty: "Medium",
       questionCount: 1,
       quiz: expect.arrayContaining([expect.objectContaining({ answer: 0 })]),
+      backgroundProcessing: {
+        status: "queued",
+        task: "INDEX_MATERIAL",
+        jobId: "job-1",
+      },
     });
   });
 
@@ -258,17 +295,27 @@ describe("the live generation path", () => {
 
     expect(savedMaterials[0].linkedQuizzes).toEqual(["quiz-1"]);
     expect(jobQueueEnqueue).toHaveBeenCalledTimes(1);
-    expect(jobQueueEnqueue.mock.calls[0][1]).toEqual({ type: "INDEX_MATERIAL", data: { materialId: "material-1" } });
+    // The payload carries the application job id alongside the unchanged data.
+    expect(jobQueueEnqueue.mock.calls[0][1]).toEqual({
+      type: "INDEX_MATERIAL",
+      data: { materialId: "material-1" },
+      jobId: "job-1",
+    });
+    expect(jobQueueEnqueue.mock.calls[0][2]).toEqual({ deduplicationId: "index-material:material-1" });
   });
 
-  test("the success payload carries no scheduling status when the job was queued", async () => {
-    // The happy path must be byte-for-byte what it was before post-commit
-    // scheduling failures were represented, so no field appears at all.
+  test("the success payload reports the queued job so it can be tracked", async () => {
+    // Since the async job boundary, the happy path names the job rather than
+    // staying silent: the client needs the id to ask how indexing is going.
     setAIProvider(createMockAIProvider([acceptedQuestion()]));
 
     const { res } = await drive();
 
-    expect(res.body).not.toHaveProperty("backgroundProcessing");
+    expect(res.body.backgroundProcessing).toEqual({
+      status: "queued",
+      task: "INDEX_MATERIAL",
+      jobId: "job-1",
+    });
   });
 
   test("a failed INDEX_MATERIAL enqueue does not fail a committed quiz", async () => {
@@ -283,6 +330,7 @@ describe("the live generation path", () => {
     expect(res.body.backgroundProcessing).toEqual({
       status: "not_scheduled",
       task: "INDEX_MATERIAL",
+      jobId: "job-1",
     });
     // Everything the client relies on is still there.
     expect(res.body.quizId).toBe("quiz-1");
@@ -362,7 +410,7 @@ describe("the live generation path", () => {
 
     const serialised = JSON.stringify(res.body);
     expect(serialised).not.toMatch(/redis|socket|ECONNREFUSED|password|api[_-]?key|\/app\/|at Object/i);
-    expect(Object.keys(res.body.backgroundProcessing).sort()).toEqual(["status", "task"]);
+    expect(Object.keys(res.body.backgroundProcessing).sort()).toEqual(["jobId", "status", "task"]);
   });
 
   test("runs the material and quiz writes in one transaction", async () => {

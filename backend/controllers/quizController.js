@@ -12,36 +12,56 @@ import { analyzeMistakesForAttempt } from "../services/mistakeAnalysisService.js
 import { enqueueFailedQuestionItems, rebuildReviewQueueForUser } from "../services/reviewQueueService.js";
 import { indexStudyMaterialChunks } from "../services/embeddingService.js";
 import logger from "../utils/logger.js";
-import { jobQueue } from "../utils/jobQueue.js";
+import { enqueueTrackedJob } from "../utils/jobQueue.js";
 import { runInTransaction } from "../utils/dbTransactions.js";
 import { normalizeTopic } from "../services/topicNormalizationService.js";
 import fs from "fs";
 
 /**
- * Schedules background work that runs strictly after a durable write.
+ * Schedules tracked background work that runs strictly after a durable write.
  *
  * Scheduling is not part of the business operation: by the time this is called
  * the record it refers to is already committed. A queue failure therefore cannot
  * be reported as a failure of the operation the client just performed, and it
  * cannot be rolled back, because there is nothing left to roll back.
  *
- * The handler is given the outcome rather than an exception so it stays in
- * control of the response, and only a QueueEnqueueError is absorbed: anything
- * else is a real fault and is rethrown rather than disguised as a partial success.
+ * The `enqueueTrackedJob` helper owns the ordering (record first, then the
+ * queue), so a job is never reported as queued when the enqueue actually failed.
+ * Only a QueueEnqueueError is absorbed: anything else is a real fault and is
+ * rethrown rather than disguised as a partial success.
  *
- * @returns {Promise<{ status: "scheduled" } | { status: "not_scheduled", task: string } | null>}
- *   `null` when scheduling succeeded, so the success payload stays exactly as it
- *   was before, and a status object when it did not.
+ * @returns {Promise<object|null} A `backgroundProcessing` object to merge into the
+ *   success payload, or `null` when the job could not be tracked at all.
  */
-const scheduleBackgroundWork = async ({ task, requestId, userId, enqueue }) => {
+const scheduleBackgroundWork = async ({ task, requestId, userId, resource, data, deduplicationId }) => {
   try {
-    await enqueue();
-    return null;
+    const { job, scheduled, error } = await enqueueTrackedJob({
+      user: userId,
+      type: task,
+      resource,
+      data,
+      deduplicationId,
+      name: `${task} - User ${userId}`,
+    });
+
+    if (scheduled) {
+      return { status: "queued", task, jobId: String(job._id) };
+    }
+
+    // The refusal is already recorded on the job record, which stays queryable.
+    // Log the cause here; the client is told only what it can act on.
+    logger.error("Durable state committed but background work was not scheduled.", {
+      requestId,
+      userId,
+      task,
+      jobId: String(job._id),
+      error: error?.message,
+    });
+
+    return { status: "not_scheduled", task, jobId: String(job._id) };
   } catch (err) {
     if (!(err instanceof QueueEnqueueError)) throw err;
 
-    // Operational recovery is still required for this job, and that remains
-    // visible in the logs; the client is told only what it can act on.
     logger.error("Durable state committed but background work was not scheduled.", {
       requestId,
       userId,
@@ -145,12 +165,9 @@ export const generateQuizController = async (req, res, next) => {
       task: "INDEX_MATERIAL",
       requestId: req.requestId,
       userId: req.user._id,
-      enqueue: () => jobQueue.enqueue(`RAG Index Material: ${material.title}`, {
-        type: "INDEX_MATERIAL",
-        data: { materialId: material._id },
-      }, {
-        deduplicationId: `index-material:${material._id}`,
-      }),
+      resource: { materialId: material._id, quizId: savedQuiz._id },
+      data: { materialId: material._id },
+      deduplicationId: `index-material:${material._id}`,
     });
 
     material.linkedQuizzes.push(savedQuiz._id);
@@ -328,16 +345,13 @@ export const saveAttempt = async (req, res, next) => {
       task: "SYNC_ATTEMPT",
       requestId: req.requestId,
       userId: req.user._id,
-      enqueue: () => jobQueue.enqueue(`Sync Attempt Analytics & Rebuild Queue - User ${req.user._id}`, {
-        type: "SYNC_ATTEMPT",
-        data: {
-          attemptId: attempt._id,
-          userId: req.user._id,
-          quizId: quiz._id,
-        },
-      }, {
-        deduplicationId: `sync-attempt:${attempt._id}`,
-      }),
+      resource: { attemptId: attempt._id, quizId: quiz._id },
+      data: {
+        attemptId: attempt._id,
+        userId: req.user._id,
+        quizId: quiz._id,
+      },
+      deduplicationId: `sync-attempt:${attempt._id}`,
     });
 
     logger.info("Saved quiz attempt success", {

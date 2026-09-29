@@ -40,6 +40,15 @@ This document lists the architectural limitations of the current AthenaeumAI pla
 
 ---
 
+## 🔎 Background Job Status Is Tracked, Not Recovered
+- **What now exists**: background work that was already asynchronous (`INDEX_MATERIAL`, `SYNC_ATTEMPT`) is recorded in a `BackgroundJob` document and readable at `GET /api/v1/jobs/:id`, scoped to the authenticated learner. States are `pending → queued → running → completed | failed`, plus `not_scheduled` when the queue refused the work. A client can therefore tell the difference between work that is genuinely running and work that never started.
+- **Ordering**: the job record is created *after* the business record is committed and *before* the enqueue is attempted, so a job is never reported as `queued` when Redis refused it. The record is deliberately **not** created inside the business transaction and **is not** a transactional outbox: this repository's Mongo deployment is a standalone outside a replica set, so transactions are unavailable there.
+- **Separation of state**: a `BackgroundJob` describes background processing only. It is never evidence that a `StudyMaterial`, `Quiz` or `QuizAttempt` exists, and it is not the correctness boundary for `SYNC_ATTEMPT` — the durable claim on `QuizAttempt.sync` inside the business transaction remains that boundary.
+- **Still missing**: the record makes a lost job *visible*; it does not make it *recoverable*. Nothing re-enqueues a `not_scheduled` or `failed` job, there is no operator endpoint to retry one, and no reconciliation pass exists. Retention is a 30-day TTL on `completedAt`, so a job that never resolves is retained indefinitely rather than silently dropped.
+- **Residual risk unchanged**: client-driven duplicate submission is still possible, because there is no HTTP idempotency key.
+
+---
+
 ## 💾 Single Instance MongoDB Dependency
 - **Limitation**: System operations assume a single-instance MongoDB connection.
 - **Impact**: If MongoDB fails, crucial parts of the application (e.g. signup, login, dashboard retrieval, attempts saving) degrade.

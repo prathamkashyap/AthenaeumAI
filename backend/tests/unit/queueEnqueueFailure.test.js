@@ -33,8 +33,39 @@ jest.unstable_mockModule("../../models/QuizAttempt.js", () => ({
   default: { create: quizAttemptCreate },
 }));
 jest.unstable_mockModule("../../config/database.js", () => ({ isDBConnected }));
+// The controller schedules through the tracked helper, which owns the
+// record-then-enqueue ordering.
+// The controller schedules through the tracked helper, which owns the
+// record-then-enqueue ordering. It is mocked at this boundary so the assertions
+// can observe both the outcome and the arguments the real helper receives, and
+// so a queue refusal is modelled the way the real helper models it.
+const createTrackedJob = jest.fn(async ({ type, resource }) => ({
+  _id: "job-1",
+  user: "user-1",
+  type,
+  status: "pending",
+  resource,
+  queueJobId: null,
+}));
+const markTrackedQueued = jest.fn(async () => null);
+const markTrackedNotScheduled = jest.fn(async () => null);
+
+const enqueueTrackedJob = jest.fn(async ({ type, resource, data, deduplicationId, name }) => {
+  const job = await createTrackedJob({ type, resource });
+  try {
+    const queued = await jobQueueEnqueue(name, { type, data, jobId: String(job._id) }, { deduplicationId });
+    await markTrackedQueued();
+    return { job, scheduled: true, error: null };
+  } catch (error) {
+    if (!(error instanceof QueueEnqueueError)) throw error;
+    await markTrackedNotScheduled();
+    return { job, scheduled: false, error };
+  }
+});
+
 jest.unstable_mockModule("../../utils/jobQueue.js", () => ({
   jobQueue: { enqueue: jobQueueEnqueue },
+  enqueueTrackedJob,
 }));
 jest.unstable_mockModule("../../services/mistakeAnalysisService.js", () => ({
   analyzeMistakesForAttempt,
@@ -123,7 +154,7 @@ afterEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("saveAttempt: ordinary success", () => {
-  test("returns the existing payload with no scheduling status", async () => {
+  test("returns the saved attempt together with the queued job", async () => {
     const { res, next } = await drive();
 
     expect(next).not.toHaveBeenCalled();
@@ -133,8 +164,8 @@ describe("saveAttempt: ordinary success", () => {
       mistakeAnalyses: [],
       attemptCount: 1,
       bestScore: 50,
+      backgroundProcessing: { status: "queued", task: "SYNC_ATTEMPT", jobId: "job-1" },
     });
-    expect(res.body).not.toHaveProperty("backgroundProcessing");
     expect(jobQueueEnqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -142,8 +173,12 @@ describe("saveAttempt: ordinary success", () => {
     await drive();
 
     expect(jobQueueEnqueue).toHaveBeenCalledWith(
-      expect.stringContaining("Sync Attempt Analytics"),
-      { type: "SYNC_ATTEMPT", data: { attemptId: "attempt-1", userId: "user-1", quizId: "quiz-1" } },
+      expect.stringContaining("SYNC_ATTEMPT"),
+      {
+        type: "SYNC_ATTEMPT",
+        data: { attemptId: "attempt-1", userId: "user-1", quizId: "quiz-1" },
+        jobId: "job-1",
+      },
       { deduplicationId: "sync-attempt:attempt-1" },
     );
   });
@@ -165,6 +200,7 @@ describe("saveAttempt: scheduling fails after the attempt is durable", () => {
     expect(res.body.backgroundProcessing).toEqual({
       status: "not_scheduled",
       task: "SYNC_ATTEMPT",
+      jobId: "job-1",
     });
   });
 
@@ -193,7 +229,7 @@ describe("saveAttempt: scheduling fails after the attempt is durable", () => {
 
     const serialised = JSON.stringify(res.body);
     expect(serialised).not.toMatch(/redis|socket|ECONNREFUSED|password|api[_-]?key|at Object/i);
-    expect(Object.keys(res.body.backgroundProcessing).sort()).toEqual(["status", "task"]);
+    expect(Object.keys(res.body.backgroundProcessing).sort()).toEqual(["jobId", "status", "task"]);
   });
 });
 
