@@ -16,18 +16,51 @@ import {
   createMockAIProvider,
   createFailingAIProvider,
   createHangingAIProvider,
+  createStallingStreamProvider,
 } from "../mocks/mockAIProvider.js";
 import {
   setAIProvider,
   getAIProvider,
   resetAIProvider,
   AIProviderTimeoutError,
+  AIProviderStreamTimeoutError,
   AI_COMPLETION_TIMEOUT_MS,
+  AI_STREAM_INACTIVITY_TIMEOUT_MS,
 } from "../../services/aiProvider.js";
 
 const MESSAGES = [{ role: "user", content: "hello" }];
 
 const OK = { content: "a model response", usage: { totalTokens: 42 } };
+
+/**
+ * Starts consuming a stream and records how it ended.
+ *
+ * The bounded stream is an async iterable rather than a promise, so consumption is
+ * driven by a real `for await`, and settlement is observed through an explicit
+ * flag rather than a `Promise.race` against an already-resolved sentinel, which
+ * would be racy under fake timers.
+ */
+const trackStream = (streamPromise) => {
+  const state = { chunks: [], settled: null };
+
+  state.done = (async () => {
+    const stream = await streamPromise;
+    for await (const chunk of stream) state.chunks.push(chunk);
+    return state.chunks;
+  })().then(
+    (value) => { state.settled = { status: "resolved", value }; },
+    (error) => { state.settled = { status: "rejected", error }; },
+  );
+
+  return state;
+};
+
+/** Advances fake timers and lets the microtask queue drain. */
+const advance = async (ms) => {
+  await jest.advanceTimersByTimeAsync(ms);
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 afterEach(() => {
   resetAIProvider();
@@ -184,11 +217,7 @@ describe("the timeout boundary", () => {
     expect(getAIProvider().complete).not.toBe(injected.complete);
   });
 
-  test("passes streaming straight through to the provider, unbounded", async () => {
-    // Streaming needs an inactivity boundary rather than a total duration, and is
-    // explicitly out of scope for this task. The provider is still the thing that
-    // is called, and no completion timer is armed on its behalf.
-    jest.useFakeTimers();
+  test("passes a healthy stream through unchanged", async () => {
     const provider = createMockAIProvider([{ answer: "streamed" }]);
     setAIProvider(provider);
 
@@ -196,32 +225,236 @@ describe("the timeout boundary", () => {
     const chunks = [];
     for await (const chunk of stream) chunks.push(chunk);
 
+    // Same normalized shape the seam has always produced: no SDK objects.
     expect(provider.stream).toHaveBeenCalledWith({ messages: MESSAGES });
     expect(chunks.map((chunk) => chunk.content).join("")).toContain("streamed");
+    for (const chunk of chunks) expect(Object.keys(chunk)).toEqual(["content"]);
+  });
+
+  test("a healthy stream arms no timer once it has finished", async () => {
+    jest.useFakeTimers();
+    const provider = createStallingStreamProvider({ count: 3, then: "end" });
+    setAIProvider(provider);
+
+    const stream = await getAIProvider().stream({ messages: MESSAGES });
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+
+    expect(chunks).toHaveLength(3);
     expect(jest.getTimerCount()).toBe(0);
   });
 
-  test("does not subject a hanging stream to the completion boundary", async () => {
-    // If the boundary were applied to streaming as well, a stream that never opens
-    // would be rejected once the completion timeout elapsed. It must not be.
+  test("times out when the stream never yields its first chunk", async () => {
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ count: 0, then: "stall" }));
+
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    // Let the stream start so its watchdog is armed from t=0.
+    await advance(0);
+    await advance(AI_STREAM_INACTIVITY_TIMEOUT_MS - 1);
+    expect(state.settled).toBeNull();
+
+    await advance(2);
+    expect(state.settled.status).toBe("rejected");
+    expect(state.settled.error).toBeInstanceOf(AIProviderStreamTimeoutError);
+    expect(state.settled.error.code).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    expect(state.settled.error.inactivityMs).toBe(AI_STREAM_INACTIVITY_TIMEOUT_MS);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("times out when the stream itself never opens", async () => {
+    // The wait for the stream handle is an upstream request too, so it is bounded
+    // by the same inactivity rule.
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ openNever: true }));
+
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    await advance(0);
+    await advance(AI_STREAM_INACTIVITY_TIMEOUT_MS - 1);
+    expect(state.settled).toBeNull();
+
+    await advance(2);
+    expect(state.settled.status).toBe("rejected");
+    expect(state.settled.error.code).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("times out only after the inactivity window following the last chunk", async () => {
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ content: "c", count: 2, then: "stall" }));
+
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    await advance(0);
+    expect(state.chunks).toHaveLength(2);
+
+    // Not yet: the arrival of the second chunk reset the window.
+    await advance(AI_STREAM_INACTIVITY_TIMEOUT_MS - 1);
+    expect(state.settled).toBeNull();
+
+    await advance(2);
+    expect(state.settled.status).toBe("rejected");
+    expect(state.settled.error.code).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    // Both chunks were still delivered before the stall.
+    expect(state.chunks).toHaveLength(2);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("each chunk resets the inactivity window", async () => {
+    jest.useFakeTimers();
+    // One item every half-interval: three windows elapse in total, well beyond the
+    // inactivity boundary, yet the stream survives because each item reset it.
+    setAIProvider(createStallingStreamProvider({
+      content: "c",
+      count: 3,
+      then: "end",
+      gap: AI_STREAM_INACTIVITY_TIMEOUT_MS / 2,
+    }));
+
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    await advance(0);
+    for (let i = 0; i < 3; i += 1) {
+      await advance(AI_STREAM_INACTIVITY_TIMEOUT_MS / 2 - 1);
+      // At no point may the watchdog have killed it: the only acceptable end
+      // states mid-flight are "still going" or, on the last window, "finished".
+      expect(state.settled?.error?.code).not.toBe("AI_PROVIDER_STREAM_TIMEOUT");
+      await advance(2);
+      expect(state.chunks).toHaveLength(i + 1);
+    }
+
+    // Three half-windows is 1.5x the inactivity boundary, and it completed.
+    expect(state.settled.status).toBe("resolved");
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("a continuously producing stream is never killed for being long", async () => {
+    jest.useFakeTimers();
+    // One item every half-interval for four intervals: the total lifetime is
+    // roughly twice the inactivity boundary, so a total-duration limit would have
+    // terminated this healthy stream.
+    setAIProvider(createStallingStreamProvider({
+      content: "tok",
+      count: 4,
+      then: "end",
+      gap: AI_STREAM_INACTIVITY_TIMEOUT_MS / 2,
+    }));
+
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    await advance(2 * AI_STREAM_INACTIVITY_TIMEOUT_MS);
+
+    expect(state.settled.status).toBe("resolved");
+    expect(state.chunks).toHaveLength(4);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("a stream that throws clears the watchdog and propagates the error", async () => {
     jest.useFakeTimers();
     setAIProvider({
       complete: jest.fn(),
-      stream: jest.fn(() => new Promise(() => {})),
+      stream: jest.fn(() => (async function* stream() {
+        yield { content: "partial" };
+        throw new Error("upstream reset");
+      })()),
     });
 
-    const pending = getAIProvider().stream({ messages: MESSAGES });
-    const outcome = await Promise.race([
-      pending.then(() => "settled", () => "settled"),
-      Promise.resolve("still-pending"),
-    ]);
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
 
-    expect(outcome).toBe("still-pending");
+    await advance(0);
 
-    await jest.advanceTimersByTimeAsync(AI_COMPLETION_TIMEOUT_MS * 2);
-    expect(await Promise.race([pending.then(() => "settled", () => "settled"), Promise.resolve("still-pending")]))
-      .toBe("still-pending");
+    expect(state.settled.status).toBe("rejected");
+    expect(state.settled.error.message).toBe("upstream reset");
+    expect(state.chunks).toHaveLength(1);
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("a consumer stopping early closes the upstream iterator and clears the watchdog", async () => {
+    jest.useFakeTimers();
+    let released = 0;
+    setAIProvider({
+      complete: jest.fn(),
+      stream: jest.fn(() => (async function* stream() {
+        try {
+          yield { content: "one" };
+          yield { content: "two" };
+          await new Promise(() => {});
+        } finally {
+          released += 1;
+        }
+      })()),
+    });
+
+    const stream = await getAIProvider().stream({ messages: MESSAGES });
+    for await (const chunk of stream) {
+      expect(chunk.content).toBe("one");
+      break;
+    }
+
+    // The upstream generator's own cleanup ran, so the stream is not left open.
+    expect(released).toBe(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("concurrent streams have independent watchdogs", async () => {
+    jest.useFakeTimers();
+    setAIProvider({
+      complete: jest.fn(),
+      stream: jest.fn((request) => {
+        const stalling = request.messages[0].content === "stall";
+        return (async function* stream() {
+          yield { content: "first" };
+          if (stalling) await new Promise(() => {});
+          else yield { content: "second" };
+        })();
+      }),
+    });
+
+    const open = (content) => getAIProvider().stream({ messages: [{ role: "user", content }] });
+    const healthy = trackStream(open("ok"));
+    const stalled = trackStream(open("stall"));
+
+    await advance(0);
+    // The healthy stream finished on its own; the stalled one is still waiting.
+    expect(healthy.settled.status).toBe("resolved");
+    expect(healthy.chunks).toEqual([{ content: "first" }, { content: "second" }]);
+    expect(stalled.settled).toBeNull();
+
+    await advance(AI_STREAM_INACTIVITY_TIMEOUT_MS);
+
+    // Only the stalled stream was terminated.
+    expect(stalled.settled.status).toBe("rejected");
+    expect(stalled.settled.error.code).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    expect(healthy.settled.status).toBe("resolved");
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("the two policies stay independent", async () => {
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ content: "c", count: 2, then: "end", gap: 1000 }));
+
+    // Streaming is not wrapped in the completion boundary: a stream that runs for
+    // longer than the completion timeout is untouched by it.
+    const state = trackStream(getAIProvider().stream({ messages: MESSAGES }));
+
+    await advance(AI_COMPLETION_TIMEOUT_MS);
+
+    expect(state.settled.status).toBe("resolved");
+    expect(state.chunks).toHaveLength(2);
+  });
+
+  test("the stream timeout error is distinct and carries no provider internals", () => {
+    const streamError = new AIProviderStreamTimeoutError(AI_STREAM_INACTIVITY_TIMEOUT_MS);
+
+    expect(streamError).toBeInstanceOf(Error);
+    expect(streamError).toBeInstanceOf(AIProviderStreamTimeoutError);
+    expect(streamError).not.toBeInstanceOf(AIProviderTimeoutError);
+    expect(streamError.code).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    expect(Object.keys(streamError).sort()).toEqual(["code", "inactivityMs", "name"]);
+    expect(streamError.message).not.toMatch(/groq|api[_-]?key|socket|0x/i);
+    expect(streamError).not.toHaveProperty("statusCode");
   });
 
   test("re-arms the boundary when the provider is replaced", async () => {

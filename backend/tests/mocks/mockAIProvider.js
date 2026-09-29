@@ -136,6 +136,40 @@ export const createHangingAIProvider = () => ({
   stream: jest.fn(() => new Promise(() => {})),
 });
 
+/**
+ * A provider whose stream is driven to a chosen lifecycle outcome:
+ *
+ *   then: "end"    emit `count` items and finish normally
+ *   then: "stall"  emit `count` items and then go quiet forever
+ *   openNever      the stream handle itself never resolves
+ *
+ * `gap` waits between items so a healthy stream can be driven at a chosen pace
+ * under fake timers; when omitted, items are produced as fast as they are pulled.
+ */
+export const createStallingStreamProvider = ({
+  content = "chunk",
+  count = 3,
+  then = "stall",
+  gap = 0,
+  openNever = false,
+} = {}) => ({
+  complete: jest.fn(async () => ({ content: "unused" })),
+  stream: jest.fn(() => (
+    openNever
+      ? new Promise(() => {})
+      : (async function* stream() {
+        for (let i = 0; i < count; i += 1) {
+          if (gap) await new Promise((resolve) => { setTimeout(resolve, gap); });
+          yield { content: `${content} ${i}` };
+        }
+        if (then === "stall") {
+          // Then nothing, ever: the inactivity watchdog is what must end this.
+          await new Promise(() => {});
+        }
+      })()
+  )),
+});
+
 /** A provider whose completion rejects with a timeout-shaped error. */
 export const createTimeoutAIProvider = (ms = 15000) =>
   createFailingAIProvider(Object.assign(new Error("Request timed out"), { code: "ETIMEDOUT", timeout: ms }));

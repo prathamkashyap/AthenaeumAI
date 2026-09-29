@@ -11,8 +11,13 @@ import { jest } from "@jest/globals";
 import {
   createMockAIProvider,
   createFailingAIProvider,
+  createStallingStreamProvider,
 } from "../mocks/mockAIProvider.js";
-import { setAIProvider, resetAIProvider } from "../../services/aiProvider.js";
+import {
+  setAIProvider,
+  resetAIProvider,
+  AI_STREAM_INACTIVITY_TIMEOUT_MS,
+} from "../../services/aiProvider.js";
 
 const { streamTutorResponse } = await import("../../services/streamingTutorService.js");
 
@@ -39,6 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetAIProvider();
+  jest.useRealTimers();
 });
 
 describe("streamTutorResponse", () => {
@@ -106,6 +112,86 @@ describe("streamTutorResponse", () => {
     setAIProvider(createFailingAIProvider(new Error("tutor upstream down")));
 
     await expect(streamTutorResponse(ARGS)).rejects.toThrow("tutor upstream down");
+  });
+
+  test("a stalling stream is terminated by the seam instead of hanging", async () => {
+    // The production chain: streamingTutorService -> provider seam -> injected
+    // stalling provider -> inactivity timeout. Before the watchdog existed this
+    // loop waited forever and the HTTP response was never completed.
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ content: "Hello", count: 2, then: "stall" }));
+
+    let settled = null;
+    const chunks = [];
+    const pending = (async () => {
+      const stream = await streamTutorResponse(ARGS);
+      for await (const chunk of stream) chunks.push(chunk.content);
+    })().then(
+      () => { settled = "resolved"; },
+      (error) => { settled = error.code || error.message; },
+    );
+
+    await jest.advanceTimersByTimeAsync(0);
+    expect(chunks.length).toBeGreaterThan(0);
+
+    await jest.advanceTimersByTimeAsync(AI_STREAM_INACTIVITY_TIMEOUT_MS - 1);
+    expect(settled).toBeNull();
+
+    await jest.advanceTimersByTimeAsync(2);
+
+    expect(settled).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+    // The chunks that did arrive are still delivered to the consumer.
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.join("")).toContain("Hello");
+    expect(jest.getTimerCount()).toBe(0);
+
+    await pending;
+  });
+
+  test("a stream that opens but never produces anything is terminated", async () => {
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({ count: 0, then: "stall" }));
+
+    let settled = null;
+    (async () => {
+      const stream = await streamTutorResponse(ARGS);
+      for await (const chunk of stream) void chunk.content;
+    })().then(
+      () => { settled = "resolved"; },
+      (error) => { settled = error.code; },
+    );
+
+    await jest.advanceTimersByTimeAsync(0);
+    expect(settled).toBeNull();
+
+    await jest.advanceTimersByTimeAsync(AI_STREAM_INACTIVITY_TIMEOUT_MS + 2);
+
+    expect(settled).toBe("AI_PROVIDER_STREAM_TIMEOUT");
+  });
+
+  test("a healthy stream keeps delivering past the inactivity duration", async () => {
+    // Tutors answer slowly. A stream that keeps producing must not be killed just
+    // because it has been alive longer than the inactivity window.
+    jest.useFakeTimers();
+    setAIProvider(createStallingStreamProvider({
+      content: "part",
+      count: 4,
+      then: "end",
+      gap: AI_STREAM_INACTIVITY_TIMEOUT_MS / 2,
+    }));
+
+    const chunks = [];
+    const pending = (async () => {
+      const stream = await streamTutorResponse(ARGS);
+      for await (const chunk of stream) chunks.push(chunk.content);
+    })();
+
+    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(2 * AI_STREAM_INACTIVITY_TIMEOUT_MS);
+    await pending;
+
+    expect(chunks).toHaveLength(4);
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   test("propagates a failure raised part way through the stream", async () => {
