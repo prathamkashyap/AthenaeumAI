@@ -3,7 +3,7 @@ import { extractTextFromPDF } from "../utils/pdfParser.js";
 import Quiz from "../models/Quiz.js";
 import StudyMaterial from "../models/StudyMaterial.js";
 import { isDBConnected } from "../config/database.js";
-import { AIServiceError, DatabaseError, ValidationError, NotFoundError } from "../utils/errors.js";
+import { AIServiceError, DatabaseError, ValidationError, NotFoundError, QueueEnqueueError } from "../utils/errors.js";
 import QuizAttempt from "../models/QuizAttempt.js";
 import { getDefaultSubjects } from "../services/defaultQuizSeeder.js";
 import { updateUserProgressFromAttempt } from "../services/progressService.js";
@@ -16,6 +16,42 @@ import { jobQueue } from "../utils/jobQueue.js";
 import { runInTransaction } from "../utils/dbTransactions.js";
 import { normalizeTopic } from "../services/topicNormalizationService.js";
 import fs from "fs";
+
+/**
+ * Schedules background work that runs strictly after a durable write.
+ *
+ * Scheduling is not part of the business operation: by the time this is called
+ * the record it refers to is already committed. A queue failure therefore cannot
+ * be reported as a failure of the operation the client just performed, and it
+ * cannot be rolled back, because there is nothing left to roll back.
+ *
+ * The handler is given the outcome rather than an exception so it stays in
+ * control of the response, and only a QueueEnqueueError is absorbed: anything
+ * else is a real fault and is rethrown rather than disguised as a partial success.
+ *
+ * @returns {Promise<{ status: "scheduled" } | { status: "not_scheduled", task: string } | null>}
+ *   `null` when scheduling succeeded, so the success payload stays exactly as it
+ *   was before, and a status object when it did not.
+ */
+const scheduleBackgroundWork = async ({ task, requestId, userId, enqueue }) => {
+  try {
+    await enqueue();
+    return null;
+  } catch (err) {
+    if (!(err instanceof QueueEnqueueError)) throw err;
+
+    // Operational recovery is still required for this job, and that remains
+    // visible in the logs; the client is told only what it can act on.
+    logger.error("Durable state committed but background work was not scheduled.", {
+      requestId,
+      userId,
+      task,
+      error: err.message,
+    });
+
+    return { status: "not_scheduled", task };
+  }
+};
 
 /**
  * POST /api/v1/quiz/generate
@@ -101,12 +137,20 @@ export const generateQuizController = async (req, res, next) => {
       return { savedQuiz: quiz[0], material: mat[0] };
     });
 
+    // The material now references this file, so it must survive the finally block
+    // regardless of whether background indexing could be scheduled.
     keepUploadedFile = true;
-    await jobQueue.enqueue(`RAG Index Material: ${material.title}`, {
-      type: "INDEX_MATERIAL",
-      data: { materialId: material._id },
-    }, {
-      deduplicationId: `index-material:${material._id}`,
+
+    const backgroundProcessing = await scheduleBackgroundWork({
+      task: "INDEX_MATERIAL",
+      requestId: req.requestId,
+      userId: req.user._id,
+      enqueue: () => jobQueue.enqueue(`RAG Index Material: ${material.title}`, {
+        type: "INDEX_MATERIAL",
+        data: { materialId: material._id },
+      }, {
+        deduplicationId: `index-material:${material._id}`,
+      }),
     });
 
     material.linkedQuizzes.push(savedQuiz._id);
@@ -125,6 +169,7 @@ export const generateQuizController = async (req, res, next) => {
       difficulty,
       questionCount: questions.length,
       quiz: questions,
+      ...(backgroundProcessing ? { backgroundProcessing } : {}),
     });
   } catch (err) {
     next(err);
@@ -279,15 +324,20 @@ export const saveAttempt = async (req, res, next) => {
 
     await quiz.save();
 
-    await jobQueue.enqueue(`Sync Attempt Analytics & Rebuild Queue - User ${req.user._id}`, {
-      type: "SYNC_ATTEMPT",
-      data: {
-        attemptId: attempt._id,
-        userId: req.user._id,
-        quizId: quiz._id,
-      },
-    }, {
-      deduplicationId: `sync-attempt:${attempt._id}`,
+    const backgroundProcessing = await scheduleBackgroundWork({
+      task: "SYNC_ATTEMPT",
+      requestId: req.requestId,
+      userId: req.user._id,
+      enqueue: () => jobQueue.enqueue(`Sync Attempt Analytics & Rebuild Queue - User ${req.user._id}`, {
+        type: "SYNC_ATTEMPT",
+        data: {
+          attemptId: attempt._id,
+          userId: req.user._id,
+          quizId: quiz._id,
+        },
+      }, {
+        deduplicationId: `sync-attempt:${attempt._id}`,
+      }),
     });
 
     logger.info("Saved quiz attempt success", {
@@ -303,6 +353,7 @@ export const saveAttempt = async (req, res, next) => {
       mistakeAnalyses,
       attemptCount: quiz.attempts.length,
       bestScore: Math.max(...quiz.attempts.map((a) => Math.round((a.score / a.total) * 100))),
+      ...(backgroundProcessing ? { backgroundProcessing } : {}),
     });
   } catch (err) {
     next(err);

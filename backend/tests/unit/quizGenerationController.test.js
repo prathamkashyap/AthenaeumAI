@@ -19,6 +19,7 @@ import {
   createFailingAIProvider,
 } from "../mocks/mockAIProvider.js";
 import { setAIProvider, resetAIProvider } from "../../services/aiProvider.js";
+import { QueueEnqueueError } from "../../utils/errors.js";
 import { calculateQualityScore } from "../../utils/qualityFilter.js";
 
 // ─── Infrastructure doubles ───────────────────────────────────────────────────
@@ -258,6 +259,110 @@ describe("the live generation path", () => {
     expect(savedMaterials[0].linkedQuizzes).toEqual(["quiz-1"]);
     expect(jobQueueEnqueue).toHaveBeenCalledTimes(1);
     expect(jobQueueEnqueue.mock.calls[0][1]).toEqual({ type: "INDEX_MATERIAL", data: { materialId: "material-1" } });
+  });
+
+  test("the success payload carries no scheduling status when the job was queued", async () => {
+    // The happy path must be byte-for-byte what it was before post-commit
+    // scheduling failures were represented, so no field appears at all.
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+
+    const { res } = await drive();
+
+    expect(res.body).not.toHaveProperty("backgroundProcessing");
+  });
+
+  test("a failed INDEX_MATERIAL enqueue does not fail a committed quiz", async () => {
+    // The material and quiz are already durable at this point, so a queue failure
+    // must not be reported as a failure of the request the client just made.
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new QueueEnqueueError("Background processing could not be scheduled."));
+
+    const { res, next } = await drive();
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.body.backgroundProcessing).toEqual({
+      status: "not_scheduled",
+      task: "INDEX_MATERIAL",
+    });
+    // Everything the client relies on is still there.
+    expect(res.body.quizId).toBe("quiz-1");
+    expect(res.body.quiz).toHaveLength(1);
+  });
+
+  test("a committed quiz survives a failed enqueue, with no compensating deletion", async () => {
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new QueueEnqueueError("Background processing could not be scheduled."));
+
+    await drive();
+
+    // Persisted, not rolled back, and not deleted afterwards.
+    expect(quizCreate).toHaveBeenCalledTimes(1);
+    expect(savedQuizzes).toHaveLength(1);
+    expect(savedQuizzes[0].questions).toHaveLength(1);
+    expect(studyMaterialCreate).toHaveBeenCalledTimes(1);
+    expect(quizCreate).not.toHaveBeenCalledTimes(0);
+    // The transaction is not re-run to compensate.
+    expect(runInTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  test("the material link is saved even when indexing could not be scheduled", async () => {
+    // Previously the link update sat after the enqueue, so a queue failure skipped
+    // it and left the material without its quiz.
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new QueueEnqueueError("Background processing could not be scheduled."));
+
+    await drive();
+
+    expect(savedMaterials[0].linkedQuizzes).toEqual(["quiz-1"]);
+    expect(savedMaterials[0].save).toHaveBeenCalled();
+  });
+
+  test("the uploaded file is kept when indexing could not be scheduled", async () => {
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new QueueEnqueueError("Background processing could not be scheduled."));
+
+    await drive();
+
+    // The material references this path, so deleting it would orphan the record.
+    expect(unlinkSync).not.toHaveBeenCalled();
+  });
+
+  test("a non-queue failure during scheduling is still a real failure", async () => {
+    // Only a QueueEnqueueError means "committed but unscheduled". Anything else is
+    // a genuine fault and must not be disguised as a partial success.
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new TypeError("bug in the enqueue call site"));
+
+    const { res, next } = await drive();
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "bug in the enqueue call site" }));
+    expect(res.body).toBeNull();
+  });
+
+  test("a failure before the durable write is still a genuine failure", async () => {
+    // The critical counter-case: this must not become a success response just
+    // because queue handling is now lenient.
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    studyMaterialCreate.mockRejectedValue(new Error("mongo write failed"));
+
+    const { res, next } = await drive();
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "mongo write failed" }));
+    expect(res.body).toBeNull();
+    expect(quizCreate).not.toHaveBeenCalled();
+    // No scheduling was even attempted, so nothing is reported as unscheduled.
+    expect(jobQueueEnqueue).not.toHaveBeenCalled();
+  });
+
+  test("a scheduling failure never leaks queue internals to the client", async () => {
+    setAIProvider(createMockAIProvider([acceptedQuestion()]));
+    jobQueueEnqueue.mockRejectedValue(new QueueEnqueueError("Background processing could not be scheduled."));
+
+    const { res } = await drive();
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toMatch(/redis|socket|ECONNREFUSED|password|api[_-]?key|\/app\/|at Object/i);
+    expect(Object.keys(res.body.backgroundProcessing).sort()).toEqual(["status", "task"]);
   });
 
   test("runs the material and quiz writes in one transaction", async () => {
