@@ -1,0 +1,194 @@
+{
+  "name": "athenaeum-os-retrieval-gold-set",
+  "version": "1.0.0",
+  "description": "Hand-authored relevance judgments for AthenaeumAI's production lexical retriever (local-hash-v1). Labels are authored from the subject matter, NOT from any retriever output. Chunk keys are `${materialKey}#${chunkIndex}` and are stable across runs; no Mongo _id, timestamp or other ephemeral value is used.",
+  "labelSemantics": "A chunk is relevant to a query when it is the passage a reader would consult to answer the question. Partial topical overlap is NOT sufficient. Distractors are deliberately lexically similar to at least one query so the retriever's discrimination can be observed.",
+  "corpus": [
+    {
+      "key": "os-notes#0",
+      "materialKey": "os-notes",
+      "chunkIndex": 0,
+      "text": "The five-state process model describes the life cycle of a process as New, Ready, Running, Waiting and Terminated. A process is admitted into the New state when it is created, moves to Ready when the scheduler dispatches it, enters Running when a processor is assigned, enters Waiting when it blocks on an event such as input output, and finally reaches Terminated when it completes or is aborted by the operating system."
+    },
+    {
+      "key": "os-notes#1",
+      "materialKey": "os-notes",
+      "chunkIndex": 1,
+      "text": "The process control block is the kernel data structure that stores everything the operating system needs in order to manage a process. It holds the process identifier, the program counter and processor register state, the scheduling priority, the memory management page table pointer, the accounting information and the list of open files and sockets owned by the process."
+    },
+    {
+      "key": "os-notes#2",
+      "materialKey": "os-notes",
+      "chunkIndex": 2,
+      "text": "A deadlock requires four necessary conditions to hold simultaneously: mutual exclusion, in which a resource is held by at most one process; hold and wait, in which a process holds a resource while waiting for further resources; the absence of preemption, in which a granted resource cannot be forcibly removed; and circular wait, in which a cycle of waiting processes exists."
+    },
+    {
+      "key": "os-notes#3",
+      "materialKey": "os-notes",
+      "chunkIndex": 3,
+      "text": "The banker's algorithm is a deadlock avoidance technique that grants a resource request only when the resulting allocation state remains safe. The algorithm simulates every possible completion order after the grant and proceeds only if at least one safe sequence exists, otherwise the request is deferred until later."
+    },
+    {
+      "key": "os-notes#4",
+      "materialKey": "os-notes",
+      "chunkIndex": 4,
+      "text": "Page replacement algorithms decide which resident page to evict when a page fault occurs and no free frame remains. Least recently used tracks temporal locality and performs well on most workloads, first in first out is cheap but ignores future use, optimal replacement has the lowest fault rate but is unimplementable, and random provides no locality at all."
+    },
+    {
+      "key": "os-notes#5",
+      "materialKey": "os-notes",
+      "chunkIndex": 5,
+      "text": "Handling a page fault is a fixed sequence of hardware and operating system steps. The memory management unit raises the fault trap, the operating system validates the reference, consults the free frame list or a page replacement policy, schedules the required disk read to bring the page into a frame, updates the page table, and finally restarts the instruction that caused the fault."
+    },
+    {
+      "key": "os-notes#6",
+      "materialKey": "os-notes",
+      "chunkIndex": 6,
+      "text": "Disk scheduling determines the order in which queued block requests are served. First come first served is fair but suffers a long seek head movement, shortest seek time first reduces total movement but can starve distant requests, and the scan or elevator policy services requests in both directions while the head sweeps across the platter."
+    },
+    {
+      "key": "os-notes#7",
+      "materialKey": "os-notes",
+      "chunkIndex": 7,
+      "text": "Memory allocation schemes trade internal and external fragmentation against one another. Contiguous allocation is simple and supports register addressing but suffers external fragmentation, fixed partitions waste memory internally, and paging eliminates external fragmentation at the cost of internal fragmentation within each fixed size page frame."
+    },
+    {
+      "key": "os-notes#8",
+      "materialKey": "os-notes",
+      "chunkIndex": 8,
+      "text": "Round robin preemptive scheduling gives each ready process a fixed time slice on the processor and preempts it when the slice expires, handing the processor to the next process in the ready queue. Contrast this with non preemptive first come first served, where a long process at the head of the queue produces the convoy effect and delays every short process behind it."
+    },
+    {
+      "key": "os-notes#9",
+      "materialKey": "os-notes",
+      "chunkIndex": 9,
+      "text": "A counting semaphore is a synchronisation primitive that holds a counter representing the number of available resource units. A process that needs the resource performs a wait operation that decrements the counter, blocking while the counter is zero, and releases it with a signal operation that increments the counter and wakes a blocked process, thereby coordinating access to a shared resource."
+    },
+    {
+      "key": "os-notes#10",
+      "materialKey": "os-notes",
+      "chunkIndex": 10,
+      "text": "Virtual memory allows a process to address more memory than it physically owns by mapping virtual addresses onto frames. Address translation splits a virtual address into a page number and an offset, looks the page number up in the page table to obtain a frame number, and concatenates the frame number with the offset to form the physical address."
+    },
+    {
+      "key": "finance-notes#0",
+      "materialKey": "finance-notes",
+      "chunkIndex": 0,
+      "text": "In retail banking, a banker's algorithm is sometimes used informally when describing a cash management heuristic for a branch that keeps a running reserve allocation. The branch planner reviews the pending withdrawal requests and the remaining reserve, allocates a safe portion of the reserve to each request, and defers the remainder when the allocation would fall below the required minimum balance."
+    },
+    {
+      "key": "db-notes#0",
+      "materialKey": "db-notes",
+      "chunkIndex": 0,
+      "text": "Buffer allocation in a database engine decides which pages may remain resident in memory. A buffer pool holds a fixed number of frames, pages are allocated into free frames on first reference, an eviction policy chooses a victim page when no frame is free, and the dirty page is written back to storage before its frame is reused by another page."
+    },
+    {
+      "key": "net-notes#0",
+      "materialKey": "net-notes",
+      "chunkIndex": 0,
+      "text": "Filler distractor. TCP provides a reliable ordered byte stream over an unreliable packet network, using sequence numbers, acknowledgements, retransmission timers and a sliding congestion window to keep the sender from overwhelming the receiver."
+    },
+    {
+      "key": "net-notes#1",
+      "materialKey": "net-notes",
+      "chunkIndex": 1,
+      "text": "Filler distractor. The domain name system maps human readable host names to address records, and recursive resolution walks the hierarchy from the root servers down to an authoritative name server before caching the answer with a time to live."
+    },
+    {
+      "key": "ds-notes#0",
+      "materialKey": "ds-notes",
+      "chunkIndex": 0,
+      "text": "Filler distractor. A hash table stores key value pairs in buckets chosen by a hash function, keeping the expected constant time lookup while collisions are resolved by chaining entries in a list or by probing an alternative open address."
+    },
+    {
+      "key": "ds-notes#1",
+      "materialKey": "ds-notes",
+      "chunkIndex": 1,
+      "text": "Filler distractor. A breadth first search explores a graph level by level using a queue, whereas depth first search follows a single branch as far as it can using a stack, and both visit every vertex reachable from the start."
+    }
+  ],
+  "queries": [
+    {
+      "id": "q01-process-states",
+      "text": "What are the five states of a process?",
+      "relevant": ["os-notes#0"],
+      "category": "exact-terminology",
+      "note": "Exact terminology match on a distinctive phrase."
+    },
+    {
+      "id": "q02-process-control-block",
+      "text": "What information does the process control block store?",
+      "relevant": ["os-notes#1"],
+      "category": "exact-terminology"
+    },
+    {
+      "id": "q03-deadlock-conditions",
+      "text": "What are the necessary conditions for a deadlock?",
+      "relevant": ["os-notes#2"],
+      "category": "exact-terminology",
+      "note": "The term conditions is shared by a banker's algorithm chunk, so this discriminates."
+    },
+    {
+      "id": "q04-page-replacement",
+      "text": "Which page replacement algorithm performs best and why?",
+      "relevant": ["os-notes#4"],
+      "category": "exact-terminology",
+      "note": "Shares the words algorithm and page with other chunks."
+    },
+    {
+      "id": "q05-page-fault-handling",
+      "text": "What steps does the operating system take to handle a page fault?",
+      "relevant": ["os-notes#5"],
+      "category": "exact-terminology"
+    },
+    {
+      "id": "q06-late-corpus-chunk",
+      "text": "How does a counting semaphore coordinate access to a shared resource?",
+      "relevant": ["os-notes#9"],
+      "category": "relevant-chunk-late-in-corpus",
+      "note": "The target sits near the end of the corpus, so an early-return or prefix-only bug would miss it."
+    },
+    {
+      "id": "q07-multiple-relevant",
+      "text": "What causes a deadlock, and how can it be avoided?",
+      "relevant": ["os-notes#2", "os-notes#3"],
+      "category": "multiple-relevant",
+      "note": "Two chunks are genuinely required to answer: the conditions and the avoidance technique. Makes Precision@5 and HitRate@k non-trivial."
+    },
+    {
+      "id": "q08-safe-allocation-distractor",
+      "text": "How does the banker's algorithm guarantee that a resource allocation state is safe?",
+      "relevant": ["os-notes#3"],
+      "category": "lexical-overlap-distractor",
+      "note": "finance-notes#0 uses the same algorithm name, reserve and allocation vocabulary but is about a retail branch. The labels say only the operating systems chunk answers the question."
+    },
+    {
+      "id": "q09-time-slice-paraphrase",
+      "text": "How do the jobs take turns on the machine when their allotted interval runs out?",
+      "relevant": ["os-notes#8"],
+      "category": "paraphrase-expected-to-struggle",
+      "note": "A paraphrase with almost no shared vocabulary with the round robin chunk: it says jobs, machine, interval instead of process, processor, time slice. A purely lexical retriever is expected to fail or rank this poorly. This case exists to make that limitation visible, not to be fixed."
+    },
+    {
+      "id": "q10-memory-pressure-paraphrase",
+      "text": "What happens when the program needs more working memory than the machine physically has?",
+      "relevant": ["os-notes#10"],
+      "category": "paraphrase-expected-to-struggle",
+      "note": "Describes virtual memory without using the term. Shares only the word memory with the paging and allocation chunks."
+    },
+    {
+      "id": "q11-buffer-pool-distractor",
+      "text": "How does a database buffer pool allocate frames and evict a page?",
+      "relevant": ["db-notes#0"],
+      "category": "cross-material",
+      "note": "The answer lives in a different material, so retrieval must span the user's whole corpus and must respect the material filter when one is supplied."
+    },
+    {
+      "id": "q12-ambiguous-allocation",
+      "text": "How does memory allocation compare between contiguous allocation and paging?",
+      "relevant": ["os-notes#7"],
+      "category": "exact-terminology",
+      "note": "Shares the words allocation and paging with several other chunks, but only one answers the fragmentation comparison."
+    }
+  ]
+}
