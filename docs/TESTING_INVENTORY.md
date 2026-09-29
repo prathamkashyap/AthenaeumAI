@@ -504,23 +504,42 @@ These two statements are true simultaneously and are not equivalent:
 
 ## 8. E2E inventory
 
-**Files:** 1. **Tests:** 14, confirmed by `npx playwright test --list` (read-only; no browser
-required to list).
+**Files:** 2 (`flow.spec.ts`, `async-job-lifecycle.spec.ts`). **Tests:** 27.
 
-**Not executed during this audit.** Exact reasons:
+**Previously not executable; the three blockers in the earlier audit are resolved or
+superseded.**
 
-1. **No Chromium is installed.** `~/Library/Caches/ms-playwright/` does not exist. Three of the
-   14 tests use the `page` fixture and require a browser; `npx playwright install --with-deps
-   chromium` is a network download and an environment change.
-2. **The suite provisions two long-lived servers** via `playwright.config.ts:25-38` — a
-   `node backend/server.js` API and a `npm run dev` Vite server. That is not a trivial,
-   configuration-free invocation.
-3. **The default database target is not available.** `playwright.config.ts:6-9` defaults
-   `mongoUri` to `mongodb://127.0.0.1:27018/athenaeumAI_e2e`; nothing is listening on `27018`
-   in this environment (local MongoDB is on `27017`). A run without an explicit
-   `MONGODB_URI` would fail on the environment rather than on application behaviour.
+1. **Chromium** — `npx playwright install chromium` was run and the browser is now present, so
+   the `page`-based specs execute.
+2. **Database target** — the config's `mongoUri` defaulted to `mongodb://127.0.0.1:27018/...`,
+   which was not listening, so the API never passed `/health/ready` and the entire suite failed
+   with an opaque `webServer` timeout. The default now targets `27017`, and `MONGODB_URI_TEST`
+   takes precedence over `MONGODB_URI`.
+3. **Servers** — unchanged in shape: an API process and a Vite dev server. Requests go to the
+   absolute API root rather than through Vite, because there is no dev proxy.
 
-**Structure:** 5 `describe` blocks, 14 tests.
+**Redis remains unavailable**, so the real BullMQ lifecycle is opt-in via `E2E_REAL_QUEUE=true`,
+which additionally starts `backend/worker.js` as a second `webServer` entry. Left unset, the
+backend runs with its queue disabled and the lifecycle spec skips rather than passing vacuously.
+
+### Findings from a real run
+
+- **`POST /api/v1/quiz/generate` cannot work on a standalone `mongod`.** It persists the
+  material and quiz inside a transaction, and transactions require a replica set or mongos.
+  The endpoint returns 500 with *"This MongoDB deployment does not support retryable writes"*,
+  and no connection-string option changes that (verified directly against the driver). This is
+  a deployment constraint, not a test defect: `docker-compose.yml` configures a single-node
+  replica set, so the intended deployment satisfies it. The async spec probes `hello.setName`
+  and skips the generation path with that stated reason.
+- The attempt-submission and job-status path uses no transaction and is exercised in full.
+- One pre-existing UI spec, *Signup creates a session and loads the dashboard*, fails because
+  it asserts the committed dashboard greeting `Welcome back,` (`src/pages/Index.tsx:206`) while
+  the **uncommitted** working-tree redesign replaced it with time-based greetings
+  (`Good morning` / `Good afternoon` / `Good evening`). This is stale relative to in-progress UI
+  work, not a backend gap; neither the spec nor the UI was modified.
+
+**Structure:** 8 `describe` blocks across the two files, 27 tests.
+
 
 | Block | Tests | Client | What it asserts |
 | :--- | ----: | :--- | :--- |
