@@ -46,10 +46,10 @@ Ten test files exist in the repository. Generated coverage artefacts
 | Suite | Location / command | Framework | Files | Tests | External services | What it exercises |
 | ----- | ------------------ | --------- | ----: | ----: | ----------------- | ----------------- |
 | Frontend unit | `npm test` → `vitest run`; `src/test/`, `vitest.config.ts` | Vitest 3.2.4 (jsdom) | 1 | 1 | none | Nothing. `src/test/example.test.ts` asserts `expect(true).toBe(true)`. Imports only `vitest`. |
-| Backend unit | `cd backend && npm run test:unit`; `backend/tests/unit/` | Jest 30 (node) | 6 | 118 | none | `utils/jobQueue.js` enqueue behaviour, `utils/qualityFilter.js` scoring, `services/topicNormalizationService.js` topic normalisation — the only three that import production code. The other three suites assert against local copies. |
-| Backend integration | `cd backend && npm run test:integration`; `backend/tests/integration/` | Jest 30 + supertest | 2 | 24 (21 + 3) | **MongoDB** required. **Redis** required for `bullmq.test.js`, which self-skips unless `ENABLE_JOB_QUEUE=true`. | `api.test.js` mounts 6 routers and issues 21 requests. `bullmq.test.js` runs a real BullMQ `Worker` over `processBackgroundJob` against a real Redis. |
+| Backend unit | `cd backend && npm run test:unit`; `backend/tests/unit/` | Jest 30 (node) | 21 | 564 | none | Contract suites, all production-bound: only infrastructure is replaced. Includes `mongoTransactionCapability.test.js` (capability detection and the centralized transaction gate) and `healthTransactionCapability.test.js` (the health surface's capability decision, with Redis and MongoDB mocked so that decision is isolable). |
+| Backend integration | `cd backend && npm run test:integration`; `backend/tests/integration/` | Jest 30 + supertest | 5 | 52 (47 + 5) | **MongoDB** required. **Redis** required for `bullmq.test.js`, which self-skips unless `ENABLE_JOB_QUEUE=true`. | `api.test.js` mounts 6 routers. `mongoTransactionCapability.test.js` classifies the deployment it is really connected to and proves that a transaction-backed write on a standalone server fails with a safe application error and persists nothing; its replica-set block self-skips when no replica set is available rather than asserting against a double. `bullmq.test.js` runs a real BullMQ `Worker` over `processBackgroundJob` against a real Redis. |
 | Backend coverage | `cd backend && npm run test:coverage` | Jest 30, istanbul | 8 (same as above) | 142 total (139 passed, 3 skipped) | as above | No additional code. Re-runs the full suite with instrumentation. No threshold. |
-| E2E | `npm run test:e2e`; `tests/e2e/`, `playwright.config.ts` | Playwright 1.61.0 | 1 | 14 | **MongoDB**, Chromium, a real API process, a Vite dev server | 11 API-level tests via Playwright's `request` fixture; 3 browser tests. Mocks only `**/api/v1/tutor/ask`. |
+| E2E | `npm run test:e2e`; `tests/e2e/`, `playwright.config.ts` | Playwright 1.61.0 | 2 | 28 | **MongoDB**, Chromium, a real API process, a Vite dev server. **Redis** only with `E2E_REAL_QUEUE=true`, which also starts the worker. | 15 API-level tests via Playwright's `request` fixture; 3 browser tests. Includes the async-job lifecycle spec and a readiness regression asserting `database.transactions` matches the real deployment. Mocks only `**/api/v1/tutor/ask`. |
 | Backend smoke | `npm run smoke` → `backend/scripts/smokeTest.js` | plain Node script | — | — | MongoDB, a running API | Not a Jest suite. Asserts DB connectivity, health endpoints, login, and protected-route token handling. Not part of any automated run. |
 | Backend seed/verify | `npm run seed:demo`, `npm run verify:demo` → `backend/scripts/seedDemo.js`, `verifyDemo.js` | plain Node script | — | — | MongoDB | Data seeding and count assertions. Manual utilities, not automated tests. |
 
@@ -504,7 +504,7 @@ These two statements are true simultaneously and are not equivalent:
 
 ## 8. E2E inventory
 
-**Files:** 2 (`flow.spec.ts`, `async-job-lifecycle.spec.ts`). **Tests:** 27.
+**Files:** 2 (`flow.spec.ts`, `async-job-lifecycle.spec.ts`). **Tests:** 28.
 
 **Previously not executable; the three blockers in the earlier audit are resolved or
 superseded.**
@@ -538,7 +538,17 @@ backend runs with its queue disabled and the lifecycle spec skips rather than pa
   (`Good morning` / `Good afternoon` / `Good evening`). This is stale relative to in-progress UI
   work, not a backend gap; neither the spec nor the UI was modified.
 
-**Structure:** 8 `describe` blocks across the two files, 27 tests.
+- The deployment's transaction capability is now reported by the application itself
+  (`database.transactions` on `/health` and `/health/ready`) and is read from the connected
+  server's own `hello` response rather than inferred from the URI. On this standalone deployment
+  it reports `unsupported` and `/health` reports `degraded`, while `/health/ready` stays
+  `200 ready` because every non-transactional path still works. A regression test asserts the
+  reported capability matches what the E2E helper independently probes, and needs no Redis.
+- `POST /api/v1/quiz/generate` on this deployment now returns `503` with a message naming the
+  transaction prerequisite, instead of the `500` *"does not support retryable writes"* wording
+  found in Task 14.
+
+**Structure:** 8 `describe` blocks across the two files, 28 tests.
 
 
 | Block | Tests | Client | What it asserts |

@@ -49,6 +49,15 @@ This document lists the architectural limitations of the current AthenaeumAI pla
 
 ---
 
+## 🧱 Transaction-Capable MongoDB Is Required
+- **Limitation**: multi-document transactions need a replica set or a sharded cluster. A plain standalone `mongod` cannot run them, whatever the connection string says.
+- **Why it is mandatory**: `POST /api/v1/quiz/generate` writes the `StudyMaterial` and its `Quiz` inside one transaction, and `SYNC_ATTEMPT` claims the attempt and applies the learner effects in one transaction so the durable claim and its effects commit together or not at all. Those guarantees do not survive being written without the transaction, so there is deliberately no fallback path.
+- **Detection**: the connected deployment is asked what it is, at `connectDB` time, by running `hello` and reading `setName` (replica set) or `msg: "isdbgrid"` (sharded cluster). The answer is never inferred from the URI, because a URI can carry `?replicaSet=rs0` while the server behind it is a standalone. It is reported as `supported`, `unsupported` or `unknown`; `unknown` means unprobed, not incapable, so an inconclusive probe never disables transaction paths.
+- **Behaviour on a standalone deployment**: the transaction-backed operations are refused with a `503` `DatabaseError` before a session is opened, and `GET /api/v1/health` reports `degraded` with `database.transactions: "unsupported"`. `GET /api/v1/health/ready` still returns `200 ready`, because every path that does not need a transaction remains usable and the worker depends on that endpoint; the capability is disclosed alongside `ready` so the two are not confused. Before this was explicit, the caller instead saw HTTP 500 with *"This MongoDB deployment does not support retryable writes. Please add retryWrites=false to your connection string"* — advice that does not work, since `retryWrites=false` does not make a standalone server able to transact.
+- **Supported deployment**: the `docker-compose.yml` stack runs MongoDB as a single-node replica set (`rs0`, initialised by the `mongo-init` service), so the intended deployment satisfies this. A developer running a bare `mongod` on `27017` cannot generate a quiz or sync attempts.
+
+---
+
 ## 💾 Single Instance MongoDB Dependency
 - **Limitation**: System operations assume a single-instance MongoDB connection.
 - **Impact**: If MongoDB fails, crucial parts of the application (e.g. signup, login, dashboard retrieval, attempts saving) degrade.

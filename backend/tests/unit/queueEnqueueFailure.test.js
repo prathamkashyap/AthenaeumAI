@@ -32,7 +32,19 @@ jest.unstable_mockModule("../../models/Quiz.js", () => ({
 jest.unstable_mockModule("../../models/QuizAttempt.js", () => ({
   default: { create: quizAttemptCreate },
 }));
-jest.unstable_mockModule("../../config/database.js", () => ({ isDBConnected }));
+// This suite loads the real `runInTransaction`, which reads the deployment's
+// transaction capability from this module, so the double has to report the
+// module's full surface. It reports a capable deployment: the subject here is
+// post-commit scheduling, and a refusal for lack of capability would mask it.
+jest.unstable_mockModule("../../config/database.js", () => ({
+  isDBConnected,
+  TRANSACTION_SUPPORT: {
+    SUPPORTED: "supported",
+    UNSUPPORTED: "unsupported",
+    UNKNOWN: "unknown",
+  },
+  getMongoCapabilities: () => ({ connected: true, transactions: "supported" }),
+}));
 // The controller schedules through the tracked helper, which owns the
 // record-then-enqueue ordering.
 // The controller schedules through the tracked helper, which owns the

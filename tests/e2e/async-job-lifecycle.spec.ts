@@ -132,6 +132,31 @@ test('the deployment capability this suite depends on is recorded', async ({ req
   expect(['ok', 'degraded']).toContain(health.status);
 });
 
+test('readiness reports transaction capability truthfully, without Redis', async ({ request }) => {
+  const deployment = await probeMongoDeployment();
+  const health = await (await request.get(api('/health'))).json();
+  const ready = await request.get(api('/health/ready'));
+
+  // Connected and transaction-capable are separate claims. Task 15 separated
+  // them, so the deployment can no longer read as fully healthy while quiz
+  // generation and attempt sync are impossible to execute.
+  expect(health.database.transactions).toBe(
+    deployment.transactions ? 'supported' : 'unsupported',
+  );
+
+  if (!deployment.transactions) {
+    expect(health.status).toBe('degraded');
+  }
+
+  // Readiness means "can serve traffic", which a connected database satisfies.
+  // The capability is disclosed so "ready" is never read as "can run every
+  // transaction-backed operation", and Redis is not required for either answer.
+  expect(ready.status()).toBe(200);
+  const readyBody = await ready.json();
+  expect(readyBody.status).toBe('ready');
+  expect(readyBody.database.transactions).toBe(health.database.transactions);
+});
+
 test.describe('A. Quiz generation returns a trackable job', () => {
   test('a generated quiz carries a job id and durable identifiers', async ({ request }) => {
     test.skip(

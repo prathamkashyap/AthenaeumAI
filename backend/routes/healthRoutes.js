@@ -2,6 +2,10 @@ import express from "express";
 import mongoose from "mongoose";
 import Redis from "ioredis";
 import { backgroundQueue } from "../utils/jobQueue.js";
+import {
+  TRANSACTION_SUPPORT,
+  getMongoCapabilities,
+} from "../config/database.js";
 import os from "os";
 import process from "process";
 
@@ -10,6 +14,13 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   const mongoReadyState = mongoose.connection.readyState;
   const mongoStatus = mongoReadyState === 1 ? "connected" : "disconnected";
+
+  // Connected is not the same as capable. A standalone mongod answers a
+  // connection but cannot run the transactions quiz generation and attempt sync
+  // depend on, so the deployment is reported as degraded rather than ok.
+  const capabilities = getMongoCapabilities();
+  const transactionsUnsupported =
+    capabilities.transactions === TRANSACTION_SUPPORT.UNSUPPORTED;
   
   let redisStatus = "disconnected";
   let redisClient;
@@ -42,7 +53,12 @@ router.get("/", async (req, res) => {
   }
 
   res.json({
-    status: mongoStatus === "connected" && redisStatus === "connected" ? "ok" : "degraded",
+    status:
+      mongoStatus === "connected" &&
+      redisStatus === "connected" &&
+      !transactionsUnsupported
+        ? "ok"
+        : "degraded",
     environment: process.env.NODE_ENV,
     version: "2.0.0",
     uptime: process.uptime(),
@@ -63,14 +79,27 @@ router.get("/", async (req, res) => {
     database: {
       state: mongoReadyState,
       label: mongoStatus,
+      transactions: capabilities.transactions,
     },
   });
 });
 
+/**
+ * Readiness answers "can this process serve traffic", which a connected database
+ * does satisfy: every path that does not need a transaction remains usable on a
+ * standalone deployment, and returning 503 here would take those paths down and
+ * would stall the worker's own startup dependency.
+ *
+ * The capability is reported alongside it so that "ready" is never mistaken for
+ * "able to run every transaction-backed operation".
+ */
 router.get("/ready", (req, res) => {
   const isReady = mongoose.connection.readyState === 1;
+  const { transactions } = getMongoCapabilities();
+
   res.status(isReady ? 200 : 503).json({
     status: isReady ? "ready" : "not_ready",
+    database: { transactions },
   });
 });
 
