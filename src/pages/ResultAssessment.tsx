@@ -29,6 +29,8 @@ const ResultAssessment = () => {
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [isCreatingDeck, setIsCreatingDeck] = useState(false);
+  const [isCreatingMistakeDeck, setIsCreatingMistakeDeck] = useState(false);
+  const [mistakeDeckError, setMistakeDeckError] = useState<string | null>(null);
 
   const {
     score = 0,
@@ -39,6 +41,7 @@ const ResultAssessment = () => {
     title = "Quiz",
     quizId = "",
     mistakeAnalyses = [],
+    attemptId = undefined,
   } = lastResult || {};
   const percentage = Math.round((score / Math.max(total, 1)) * 100);
 
@@ -82,6 +85,27 @@ const ResultAssessment = () => {
 
   const displayedQuestions = showAll ? questions : questions.slice(0, 5);
 
+  /**
+   * The questions this attempt got wrong, derived from the same two arrays the
+   * result is already showing rather than from `mistakeAnalyses`. The analyses
+   * come from the AI and are absent when analysis was unavailable, whereas the
+   * score itself is always known — so a learner is never denied the offer to
+   * review a question they demonstrably missed because the AI call degraded.
+   */
+  const wrongQuestionIndices = useMemo(
+    () =>
+      questions
+        .map((q, i) => ({ q, i }))
+        .filter(({ q, i }) => answers[i] !== undefined && answers[i] !== q.answer)
+        .map(({ i }) => i),
+    [questions, answers]
+  );
+
+  // A mistake set is generated from the saved attempt, so it needs the attempt's
+  // id. Without one there is nothing to generate from, and offering the action
+  // would only produce a guaranteed failure.
+  const canReviewMistakes = Boolean(attemptId) && wrongQuestionIndices.length > 0;
+
   const createFlashcardsFromQuiz = async () => {
     setIsCreatingDeck(true);
     try {
@@ -92,6 +116,47 @@ const ResultAssessment = () => {
       if (response.ok) navigate("/flashcards");
     } finally {
       setIsCreatingDeck(false);
+    }
+  };
+
+  /**
+   * Builds a review set from the questions this attempt got wrong, rather than
+   * from the whole quiz. The "Make Flashcards" action above rehearses every
+   * question including the ones already answered correctly, which is a different
+   * and much less useful thing after a scored attempt.
+   *
+   * This runs after the attempt is already recorded and the result is on screen,
+   * so a failure here is reported to the learner and nothing else. It cannot
+   * affect the attempt: the attempt was saved by a separate, earlier request, and
+   * the score above is unaffected either way.
+   */
+  const createMistakeFlashcards = async () => {
+    if (!attemptId) return;
+    setIsCreatingMistakeDeck(true);
+    setMistakeDeckError(null);
+    try {
+      const response = await apiFetch("/flashcards/generate", {
+        method: "POST",
+        body: JSON.stringify({ sourceType: "mistakes", sourceId: attemptId, count: 12 }),
+      });
+      if (response.ok) {
+        navigate("/flashcards");
+      } else {
+        // A 400 is the server declining — e.g. the attempt turned out to have no
+        // incorrect answers, which the client cannot rule out on its own when the
+        // mistake analysis degraded. A 5xx is a fault. They are reported
+        // differently because the learner's next step differs: one is "there is
+        // nothing here", the other is "this failed, the result is fine".
+        setMistakeDeckError(
+          response.status === 400
+            ? "There was nothing to review from this attempt."
+            : "Could not build a review deck. Your result is unaffected — try again."
+        );
+      }
+    } catch {
+      setMistakeDeckError("Could not reach the server. Your result is unaffected — try again.");
+    } finally {
+      setIsCreatingMistakeDeck(false);
     }
   };
 
@@ -418,6 +483,27 @@ const ResultAssessment = () => {
               Make Flashcards
             </Button>
           )}
+          {/*
+            Offered only when this attempt actually recorded a mistake and has an
+            id to generate from. On a perfect attempt the review deck would be
+            built from questions the learner already answered correctly, so the
+            action is withheld rather than offered and then declined.
+          */}
+          {canReviewMistakes && (
+            <Button
+              onClick={createMistakeFlashcards}
+              disabled={isCreatingMistakeDeck}
+              className="bg-accent text-primary-foreground hover:bg-accent/90"
+            >
+              {isCreatingMistakeDeck ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Review My {wrongQuestionIndices.length}{" "}
+              {wrongQuestionIndices.length === 1 ? "Mistake" : "Mistakes"}
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={exportToCSV}
@@ -426,6 +512,11 @@ const ResultAssessment = () => {
             <Download className="h-4 w-4 mr-2" /> Export CSV
           </Button>
         </div>
+        {mistakeDeckError && (
+          <p role="alert" className="mt-3 text-sm text-rose-400">
+            {mistakeDeckError}
+          </p>
+        )}
       </div>
     </AppLayout>
   );

@@ -29,6 +29,15 @@ export interface AttemptResult {
   title: string;
   quizId: string;
   mistakeAnalyses?: MistakeAnalysis[];
+  /**
+   * The id of the saved attempt, when the server accepted it.
+   *
+   * The attempt is what mistake-review cards are generated from, so the result
+   * page needs this to offer a review set. Absent when the attempt was not
+   * persisted, which is also when a review set cannot be built — the two cases
+   * are the same condition, so the UI can key off this being present.
+   */
+  attemptId?: string;
 }
 
 export interface MistakeAnalysis {
@@ -127,7 +136,7 @@ interface QuizContextType {
   generateQuiz: (file: File, difficulty: string, count?: number) => Promise<QuizData>;
   fetchQuiz: (id: string) => Promise<QuizData>;
   setResult: (result: AttemptResult) => void;
-  saveAttempt: (quizId: string, score: number, total: number, answers: number[], durationSeconds?: number) => Promise<{ mistakeAnalyses?: MistakeAnalysis[] } | void>;
+  saveAttempt: (quizId: string, score: number, total: number, answers: number[], durationSeconds?: number) => Promise<{ attemptId?: string; mistakeAnalyses?: MistakeAnalysis[] } | void>;
   clearError: () => void;
   clearQuiz: () => void;
 }

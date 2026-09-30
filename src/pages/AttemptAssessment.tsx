@@ -100,7 +100,7 @@ const AttemptAssessment = () => {
     });
 
     // Save attempt to backend
-    let savedAttempt: { mistakeAnalyses?: MistakeAnalysis[] } | void;
+    let savedAttempt: { attemptId?: string; mistakeAnalyses?: MistakeAnalysis[] } | void;
     if (currentQuiz?.quizId) {
       savedAttempt = await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers, timeElapsed);
     }
@@ -114,6 +114,10 @@ const AttemptAssessment = () => {
       title,
       quizId: currentQuiz?.quizId || "",
       mistakeAnalyses: savedAttempt && "mistakeAnalyses" in savedAttempt ? savedAttempt.mistakeAnalyses || [] : [],
+      // Carried so the result page can offer a mistake-review set, which is
+      // generated from this specific attempt. Undefined when the attempt was not
+      // persisted, in which case no such set can be built.
+      attemptId: savedAttempt && "attemptId" in savedAttempt ? savedAttempt.attemptId : undefined,
     });
 
     navigate(`/assessments/${id}/result`);
