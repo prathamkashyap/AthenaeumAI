@@ -23,6 +23,7 @@ const AttemptAssessment = lazy(() => import("./pages/AttemptAssessment.tsx"));
 const ResultAssessment = lazy(() => import("./pages/ResultAssessment.tsx"));
 const Tutor = lazy(() => import("./pages/Tutor.tsx"));
 const Profile = lazy(() => import("./pages/Profile.tsx"));
+const TodaysReview = lazy(() => import("./pages/TodaysReview.tsx"));
 
 const SuspenseFallback = () => (
   <div className="flex-1 flex items-center justify-center min-h-screen bg-background">
@@ -57,6 +58,7 @@ const App = () => (
                       <Route path="/flashcards" element={<Flashcards />} />
                       <Route path="/question-bank" element={<Quiz />} />
                       <Route path="/quiz" element={<Quiz />} />
+                      <Route path="/review" element={<TodaysReview />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/tutor" element={<Tutor />} />
                       <Route path="/profile" element={<Profile />} />
