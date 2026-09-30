@@ -172,7 +172,35 @@ export const createFlashcardSet = async ({ userId, sourceType, sourceId, count =
   }
 
   if (!cards.length) cards = fallbackCards;
-  if (!cards.length) throw new Error("Not enough content to generate flashcards");
+  if (!cards.length) {
+    // Nothing was produced, and there is nothing to persist, so this is the
+    // learner hitting a genuine "not yet" condition rather than a fault. With no
+    // attempts there are no weak topics to build a deck from, and the AI
+    // generator short-circuits on empty input so it never fills the gap.
+    //
+    // The 400 is the point. Without a status this surfaced as a 500, which is
+    // both a lie about what happened and an error-log entry for an expected
+    // state.
+    //
+    // The message is per-source and learner-facing, because the endpoint's
+    // `error` field is already part of the error contract and the alternative is
+    // teaching the client to recognise an internal string. A single shared
+    // message would be actively wrong for the other sources: a material with no
+    // extractable text has no weak topics to be missing.
+    const noContentMessage = {
+      "weak-topics":
+        "No weak topics yet. Take an assessment first to build adaptive review.",
+      material:
+        "This material has no text to build flashcards from yet. Try a different file.",
+      quiz: "This quiz has no questions to build flashcards from.",
+      mistakes:
+        "This attempt has nothing to review. No incorrect answers were recorded.",
+    }[sourceType] || "There is not enough material yet to build flashcards from this source.";
+
+    const error = new Error(noContentMessage);
+    error.status = 400;
+    throw error;
+  }
 
   const set = await FlashcardSet.create({
     user: userId,

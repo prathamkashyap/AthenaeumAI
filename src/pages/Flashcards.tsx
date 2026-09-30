@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { ChevronLeft, ChevronRight, RotateCcw, Check, X, Sparkles, Loader2, Brain, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, Check, X, Sparkles, Loader2, Brain, CheckCircle2, AlertTriangle, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 
@@ -51,6 +51,9 @@ const Flashcards = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [dueCount, setDueCount] = useState(0);
   const [sessionDone, setSessionDone] = useState(false);
+  // Why a weak-topic deck could not be built. Null when there is nothing to
+  // report, including while a request is in flight.
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const selectedSet = useMemo(
     () => sets.find((set) => set._id === selectedSetId) || sets[0],
@@ -128,15 +131,29 @@ const Flashcards = () => {
 
   const generateWeakTopicSet = async () => {
     setIsGenerating(true);
+    setGenerateError(null);
     try {
       const response = await apiFetch("/flashcards/generate", {
         method: "POST",
         body: JSON.stringify({ sourceType: "weak-topics", count: 12 }),
       });
-      if (!response.ok) throw new Error("Flashcard generation failed");
+      if (!response.ok) {
+        // The endpoint's `error` field is part of the error contract, and the
+        // service puts learner-facing copy there — for example, that there are
+        // no weak topics yet because no assessment has been taken. Showing it
+        // directly avoids teaching this page to recognise an internal string, and
+        // avoids a second place where the same advice is worded differently.
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || "Could not generate a deck. Please try again.");
+      }
       const data = await response.json();
       setSets((existing) => [data.set, ...existing]);
       setSelectedSetId(data.set._id);
+    } catch (err) {
+      // Previously there was no catch at all, so this rejection was unhandled:
+      // the spinner stopped and nothing was rendered, leaving the button looking
+      // inert with no explanation.
+      setGenerateError(err instanceof Error ? err.message : "Could not generate a deck.");
     } finally {
       setIsGenerating(false);
     }
@@ -183,6 +200,30 @@ const Flashcards = () => {
             )}
           </div>
         </div>
+
+        {/*
+          A rejected generation is an expected state, not a fault — a learner with
+          no attempts has no weak topics to build a deck from. The service already
+          refuses to persist an empty set, so this only has to explain why nothing
+          was created and where to go next.
+        */}
+        {generateError && !dueMode && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-4 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
+          >
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" />
+            <p className="min-w-0 flex-1 text-sm text-foreground">{generateError}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/assessments/create")}
+              className="border-accent text-accent hover:bg-accent/10"
+            >
+              <Plus className="mr-2 h-4 w-4" /> Create Assessment
+            </Button>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">

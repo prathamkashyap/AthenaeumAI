@@ -107,7 +107,12 @@ const REFUSED = {
 const ask = async (payload: Record<string, unknown>) => {
   apiFetch.mockImplementation(async (path: string) =>
     path === "/library"
-      ? { ok: true, json: async () => ({ materials: [] }) }
+      // At least one indexed material. These tests are about how a grounded
+      // answer and a refusal are presented, and the tutor now withholds its
+      // question box until the library is known to hold something — an empty
+      // library is a separate state covered in tutorNoMaterial.test.tsx. The
+      // assertions below are unchanged.
+      ? { ok: true, json: async () => ({ materials: [{ _id: "mat-1", title: "OS Notes" }] }) }
       : { ok: true, json: async () => payload },
   );
 

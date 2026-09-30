@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiFetch } from "@/lib/api";
-import { Bot, Brain, FileCheck2, FileText, HelpCircle, Info, Loader2, Send, Sparkles } from "lucide-react";
+import { Bot, Brain, FileCheck2, FileText, HelpCircle, Info, Loader2, Send, Sparkles, AlertTriangle, BookOpen, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 interface Material {
   _id: string;
@@ -97,12 +98,24 @@ const Tutor = () => {
   const [isAsking, setIsAsking] = useState(false);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState("");
+  // The tutor's grounding depends entirely on indexed material, so whether any
+  // exists has to be a known fact rather than an inference. A failed lookup is
+  // tracked apart from an empty library, because claiming "you have no
+  // materials" when the request simply failed is the one message that would
+  // send the learner off to re-upload what they already have.
+  const [materialsFailed, setMaterialsFailed] = useState(false);
+  const [materialsLoading, setMaterialsLoading] = useState(true);
 
   useEffect(() => {
+    setMaterialsLoading(true);
     apiFetch("/library")
       .then((res) => res.ok ? res.json() : Promise.reject())
-      .then((data) => setMaterials(data.materials || []))
-      .catch(() => setMaterials([]));
+      .then((data) => {
+        setMaterials(data.materials || []);
+        setMaterialsFailed(false);
+      })
+      .catch(() => setMaterialsFailed(true))
+      .finally(() => setMaterialsLoading(false));
   }, []);
 
   const selectedMaterialTitle = useMemo(() => {
@@ -164,23 +177,78 @@ const Tutor = () => {
             </p>
           </div>
 
-          <div className="w-full lg:w-72">
-            <Select value={materialId} onValueChange={setMaterialId}>
-              <SelectTrigger className="bg-muted/40">
-                <SelectValue placeholder="Choose material" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All indexed materials</SelectItem>
-                {materials.map((material) => (
-                  <SelectItem key={material._id} value={material._id}>
-                    {material.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/*
+            A selector offering only "All indexed materials" implies a library
+            behind it. With nothing indexed, or with the lookup failed, it would
+            be asserting something this page does not know.
+          */}
+          {materials.length > 0 && (
+            <div className="w-full lg:w-72">
+              <Select value={materialId} onValueChange={setMaterialId}>
+                <SelectTrigger className="bg-muted/40">
+                  <SelectValue placeholder="Choose material" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All indexed materials</SelectItem>
+                  {materials.map((material) => (
+                    <SelectItem key={material._id} value={material._id}>
+                      {material.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
+        {/*
+          The tutor answers from the learner's own material, so a question asked
+          with nothing indexed can only ever reach the grounding refusal. Saying
+          so up front, with the step that fixes it, is more useful than letting
+          the learner discover it by being refused.
+        */}
+        {!materialsLoading && materialsFailed && (
+          <Card className="academic-card p-10 text-center">
+            <div className="mx-auto h-14 w-14 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+              <AlertTriangle className="h-7 w-7 text-amber-400" />
+            </div>
+            <h2 className="font-serif text-2xl">Couldn&apos;t check your library</h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+              The tutor needs to know what you have indexed before it can answer from it, and
+              that lookup did not complete. Nothing is missing from your library — try again in a
+              moment.
+            </p>
+          </Card>
+        )}
+
+        {!materialsLoading && !materialsFailed && materials.length === 0 && (
+          <Card className="academic-card p-10 text-center">
+            <div className="mx-auto h-14 w-14 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4">
+              <BookOpen className="h-7 w-7 text-accent" />
+            </div>
+            <h2 className="font-serif text-2xl">Add material before asking</h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+              The tutor answers from your indexed study materials, so it has nothing to work from
+              yet. Upload a PDF and it will ground its answers in that material.
+            </p>
+            <Button
+              asChild
+              className="mt-5 bg-accent text-primary-foreground hover:bg-accent/90"
+            >
+              <Link to="/assessments/create">
+                <Plus className="mr-2 h-4 w-4" /> Add Material
+              </Link>
+            </Button>
+          </Card>
+        )}
+
+        {/*
+          The question box is shown only once the library is known to hold
+          something. While loading there is nothing to assert, and on a failed
+          lookup the honest thing is to withhold the interaction entirely rather
+          than offer a question that can only end in a refusal.
+        */}
+        {materialsLoading || (!materialsFailed && materials.length > 0) ? (
         <div className="grid lg:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
             <Card className="academic-card p-5">
@@ -370,6 +438,7 @@ const Tutor = () => {
             </Card>
           </aside>
         </div>
+        ) : null}
       </div>
     </AppLayout>
   );

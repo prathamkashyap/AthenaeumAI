@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { FileText, Sparkles, CheckCircle2, Search, BookOpen, Layers, Loader2, Plus } from "lucide-react";
+import { FileText, Sparkles, CheckCircle2, Search, BookOpen, Layers, Loader2, Plus, AlertTriangle, RotateCcw } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Link } from "react-router-dom";
 
@@ -24,19 +24,35 @@ const UploadPage = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  // Tracked separately from `materials`. Collapsing a failed request into an
+  // empty list told a learner with a full library that they had none, and the
+  // empty state's CTA then invited them to re-upload material they already had.
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Bumped by the retry button. Setting `search` to its own value would not
+  // change state and so would not re-run the effect, leaving the button inert.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setIsLoading(true);
+      setLoadFailed(false);
       apiFetch(`/library${search ? `?search=${encodeURIComponent(search)}` : ""}`)
         .then((response) => response.ok ? response.json() : Promise.reject())
-        .then((data) => setMaterials(data.materials || []))
-        .catch(() => setMaterials([]))
+        .then((data) => {
+          setMaterials(data.materials || []);
+          setLoadFailed(false);
+        })
+        .catch(() => {
+          // Deliberately not `setMaterials([])`. An empty list here is a claim
+          // about what the learner owns, and a failed request knows nothing of
+          // the sort. The error branch below owns this state instead.
+          setLoadFailed(true);
+        })
         .finally(() => setIsLoading(false));
     }, 180);
 
     return () => window.clearTimeout(timeout);
-  }, [search]);
+  }, [search, reloadKey]);
 
   const formatSize = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 
@@ -86,6 +102,29 @@ const UploadPage = () => {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-accent" />
           </div>
+        ) : loadFailed ? (
+          // Ordered before the empty state deliberately. A failed request must
+          // never render "No materials indexed yet", and it must not offer the
+          // create/upload path — that CTA is an answer to "you own nothing",
+          // which is not what happened here, and following it would duplicate
+          // material the learner may well already have.
+          <Card className="academic-card p-10 text-center" role="status">
+            <div className="mx-auto h-14 w-14 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+              <AlertTriangle className="h-7 w-7 text-amber-400" />
+            </div>
+            <h3 className="font-serif text-2xl">Couldn&apos;t load your library</h3>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+              The library request did not complete, so this page cannot tell you what you have
+              uploaded. Your materials are unaffected — try again in a moment.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => setReloadKey((key) => key + 1)}
+              className="mt-5 border-border hover:border-accent hover:text-accent"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" /> Try Again
+            </Button>
+          </Card>
         ) : materials.length ? (
           <div className="grid gap-4">
             {materials.map((material) => (
