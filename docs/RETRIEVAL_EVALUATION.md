@@ -814,6 +814,216 @@ reported separately rather than merged.
 
 ---
 
+## Independent holdout — separately authored (Task 16C-B)
+
+`backend/tests/fixtures/retrieval-gold-set-holdout-independent-v2.json`
+
+**This is the only benchmark in this document whose questions were not written
+by the process that built v2.** It is reported on its own, and its numbers are
+never merged with any other set.
+
+### Provenance: single clean claim
+
+All 40 questions carry one provenance: authored from corpus-only material before
+any retrieval evaluation, by a process that reports it was not given prior
+retrieval rankings, BM25 results, local-hash results, previous benchmark
+outcomes, the retrieval tests, the retrieval documentation, or any prior query
+set. 36 came from the original authoring pass; the four covering `os-notes#1`,
+`os-notes#9`, `os-notes#12` and `ds-notes#0` came from a **separate clean
+authoring pass** given only `corpus-v2-only.json`, with no access to this file, to
+any other benchmark, or to any retrieval result.
+
+The fixture's question text, relevance labels and categories for those four are
+reproduced **verbatim**; the only edit is a leading passage reference inside each
+adjudication so each label is auditable against its passage. A test asserts that
+wording, so it cannot be quietly "improved" for retrieval performance.
+
+`provenanceNote` records that a process claim is not a verified fact: no test can
+establish who saw what before authoring, because the only artifact available for
+inspection is the file itself. The suite verifies structure only.
+
+The set references the corpus **by version** (`corpusVersion: 2.0.0`) rather than
+embedding a copy, so it is measured over exactly the 40 chunks v2 and the
+Task 16C-R holdout used. All three are like for like.
+
+### Structural audit — all checks pass
+
+| Check | Result |
+| --- | --- |
+| Exactly 40 queries | PASS |
+| 40 unique ids | PASS |
+| 40 unique question texts | PASS |
+| All relevance keys resolve against corpus v2 | PASS |
+| No empty relevance sets | PASS |
+| No `distractor-notes` passage labeled relevant | PASS |
+| No stored score, rank or metric | PASS |
+| All 34 answerable passages covered | PASS (34/34) |
+
+**Exact text overlap: none.** Zero overlap against v1, v2, the exploratory
+holdout, and the coverage holdout.
+
+### Semantic convergence — the important caveat
+
+Exact overlap is zero, but **convergence is high**, and this must not be read as
+four new cases. Measured against the nearest earlier question in any benchmark:
+
+| Clean question | Nearest earlier question | Content overlap | Same passage? |
+| --- | --- | --- | --- |
+| q042 PCB contents | v1/v2 `q02-process-control-block` | ~0.83 | yes |
+| q043 counting semaphore | v1/v2 `q06-late-corpus-chunk` | ~0.50 | yes |
+| q044 trap vs interrupt | v2 `q14-trap-vs-interrupt` | **~1.00** | yes |
+| q045 hash collisions | coverage holdout `r35-hash-collisions` | ~0.31 | yes |
+
+**q044 is effectively a re-run of v2's `q14`.** Its content words are identical
+to that question; the only difference is a trailing clause, "in terms of what
+causes them". q042 differs from v1 q02 by two words. q043 adds a genuinely new
+angle by naming the wait and signal operations. q045 is the loosest at ~0.31.
+
+This is **convergent reproduction, not contamination** — the clean author never
+saw any of these. But it is also the most useful thing in this section: it
+measures a fact about the corpus. Four passages, chosen only because they needed
+coverage, each have essentially one obvious learner question, and an author given
+only the text finds that same question. **A benchmark over this corpus cannot
+manufacture many genuinely distinct questions per passage.**
+
+So: the four questions carry clean provenance, and three of them add little new
+retrieval evidence. They are kept because they are the honest outcome of the
+process, not because they widen the measurement.
+
+### Results
+
+40 chunks, 40 queries, all answerable, limit 5.
+
+| Metric | local-hash-v1 | BM25 | Delta |
+| --- | --- | --- | --- |
+| HitRate@1 | 0.9250 | 0.9750 | **+0.0500** |
+| HitRate@3 | 1.0000 | 1.0000 | 0.0000 |
+| HitRate@5 | 1.0000 | 1.0000 | 0.0000 |
+| Precision@5 | 0.2000 | 0.2000 | 0.0000 |
+| MRR | 0.9583 | 0.9875 | **+0.0292** |
+
+| Census | Value |
+| --- | --- |
+| BM25 improved | 3 |
+| BM25 worsened | **1** |
+| Unchanged | 36 |
+| Missed by both | 0 |
+| Missed by BM25 only | 0 |
+| Missed by local-hash only | 0 |
+| Rank disagreements | 4 of 40 |
+| Both rank 1 | 36 of 40 = 90.0% |
+
+The figures are unchanged from the pre-repair measurement (+0.0500 / +0.0292, 3
+wins, 1 loss), which is the expected outcome: the contaminated four and the clean
+four ask semantically near-identical questions about the same four passages.
+**What changed is the quality of the evidence, not the numbers** — the single
+regression is now attributable to a question whose author had seen nothing, and
+so it is a finding rather than an artifact.
+
+### The four queries that move
+
+| Query | local-hash | BM25 | Provenance |
+| --- | ---: | ---: | --- |
+| q003 four conditions for a deadlock | 2 | 1 | corpus-only |
+| q016 Belady's anomaly and when it occurs | 3 | 1 | corpus-only |
+| q025 why training/validation/test sets are separated | 2 | 1 | corpus-only |
+| q044 trap vs interrupt, by cause | 1 | 2 | **clean pass** |
+
+The three wins are all the same failure mode: the production retriever placing a
+lexically adjacent, evidentially poorer passage first. That failure mode is
+consistent across every benchmark in this document where BM25 gains anything.
+
+**The q044 regression is a real, mechanistically explainable weakness in BM25.**
+It ranks `distractor-notes#1` first at 8.396 against 7.306 for the correct
+passage. That passage is the shortest index stub in the corpus — a bare list of
+deadlock vocabulary with no explanation — and BM25's length normalisation
+*rewards* it for being short, while its high IDF across many mid-frequency terms
+lifts it above the passage that actually explains the distinction. The production
+retriever gets this query right.
+
+This is the second benchmark in a row where a short keyword-list stub outranks a
+substantive passage, and it is the mirror image of the gains: **BM25's length
+normalisation fixes frequency traps and creates short-stub traps.** Neither
+retriever is free of the failure mode; they have opposite ones.
+
+### What this does and does not show
+
+It shows a repeatable ranking correction, on a benchmark whose questions were
+largely authored by a process that had not seen any retrieval result, with no
+production change and no semantic infrastructure.
+
+It does not show BM25 is universally superior. The corpus is 40 chunks on one
+subject area, so every set measured against it is saturated; the gains are three
+queries; and no benchmark here measures the paraphrased, semantically-weak
+questions that both retrievers still fail entirely. No production change is
+authorized here and none is made.
+
+### The result across all four benchmarks, reported separately
+
+Never combined. Each is a different question about a different corpus or query
+distribution.
+
+| Benchmark | Author of its questions | Corpus | Queries | H@1 Δ | MRR Δ | Saturation |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| A. v1 (frozen) | same process, pre-v2 | 17 | 12 | 0.0000 | −0.0042 | 75% |
+| B. v2 (constructed) | same process, post-hoc | 40 | 29 | +0.0690 | +0.0460 | 69% |
+| C. holdout-v1 (exploratory) | same process, post-hoc | 40 | 24 | +0.0417 | +0.0208 | 87.5% |
+| D. Task 16C-R holdout | same process, post-hoc | 40 | 38 | 0.0000 | +0.0044 | 89.5% |
+| **E. independent holdout (final)** | **separate clean process** | **40** | **40** | **+0.0500** | **+0.0292** | **90.0%** |
+
+**BM25 is better on four of the five sets and slightly worse on one.** On v1 it
+regressed: MRR 0.8403 → 0.8361, with q09 falling from rank 4 to rank 5 and no
+query improving. That is the one measurement in this document where BM25 loses,
+and it is recorded here rather than smoothed over. The pattern across the rest
+is consistent — v2 +0.0460 MRR, exploratory holdout +0.0208, coverage holdout
++0.0044, independent holdout +0.0292 — but v1's −0.0042 belongs in the same
+summary as any other row.
+
+The independent holdout went through a repair and re-freeze before this
+measurement, and two things are worth recording about that process rather than
+about BM25.
+
+First, the repair made the result **weaker**, not stronger: an earlier version
+showed +0.0417 MRR with 3 wins and no losses, and removing a duplicated question
+plus three verbatim restatements of earlier benchmarks cost some of the apparent
+advantage. That is what should happen when cases that were not new evidence are
+removed.
+
+Second, the four replacement questions were first authored by a process that had
+already seen every retrieval result, which made the set mixed-provenance and
+unusable as independent evidence. They were re-authored in a clean pass given only
+the corpus. **Those four questions turned out to be semantically near-identical
+to the questions they replaced** — most of them to questions v1 and v2 already
+asked. The clean pass fixed the provenance and left the numbers unchanged, which
+is the clearest evidence available that a good provenance claim and genuinely new
+evidence are two different things.
+
+**The consistency across sets is the strongest evidence in this document, and it
+is still not a mandate to integrate.** Every set showing a gain is saturated or
+nearly so, every gain is a handful of queries, and the pattern in all of them is
+one specific failure mode. The honest summary:
+
+> BM25 corrects a real and repeatedly observed weakness in the current retriever
+> — its tendency to prefer a lexically adjacent, evidentially poor chunk over the
+> passage that actually answers the question. On a corpus this small and this
+> uniform, the two retrievers are otherwise close to equivalent, and no benchmark
+> here measures whether that holds at realistic corpus size or on the paraphrased,
+> semantically-weak queries that both still fail entirely.
+
+Integration is not authorized by this, and no production recommendation is made
+here. The blocking gaps are unchanged: the corpus is too small and too uniform to
+discriminate, and a genuinely hard paraphrase set still has not been written by
+anyone.
+
+### Reproducing
+
+```bash
+env -u GROQ_API_KEY node --experimental-vm-modules \
+  node_modules/.bin/jest tests/unit/retrievalIndependentHoldout.test.js --runInBand
+```
+
+---
+
 ## Rule for future retrieval work
 
 Any change to retrieval — BM25, semantic embeddings, a vector store, an ANN
