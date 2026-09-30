@@ -117,7 +117,13 @@ const ask = async (payload: Record<string, unknown>) => {
   );
 
   render(<Tutor />);
-  const box = screen.getByPlaceholderText(/ask about deadlock/i) as HTMLTextAreaElement;
+  // Awaited rather than read synchronously: the tutor withholds its question
+  // box until the `/library` lookup has resolved and confirmed there is
+  // material, so the box does not exist on first render. The assertions below
+  // are unchanged.
+  const box = (await screen.findByPlaceholderText(
+    /ask about deadlock/i
+  )) as HTMLTextAreaElement;
   fireEvent.change(box, { target: { value: String(payload.question) } });
   fireEvent.click(screen.getByRole("button", { name: /ask tutor/i }));
 

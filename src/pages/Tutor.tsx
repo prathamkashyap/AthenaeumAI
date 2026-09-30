@@ -207,6 +207,19 @@ const Tutor = () => {
           so up front, with the step that fixes it, is more useful than letting
           the learner discover it by being refused.
         */}
+        {/*
+          Shown while the library lookup is still in flight. Previously the
+          question box was rendered during loading, which let a fast learner
+          submit before `/library` resolved — so the tutor could accept a
+          question while still unable to say whether it had anything to ground
+          it in.
+        */}
+        {materialsLoading && (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-accent" />
+          </div>
+        )}
+
         {!materialsLoading && materialsFailed && (
           <Card className="academic-card p-10 text-center">
             <div className="mx-auto h-14 w-14 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
@@ -243,12 +256,13 @@ const Tutor = () => {
         )}
 
         {/*
-          The question box is shown only once the library is known to hold
-          something. While loading there is nothing to assert, and on a failed
-          lookup the honest thing is to withhold the interaction entirely rather
-          than offer a question that can only end in a refusal.
+          The question box appears only once the library is known to hold
+          something. Not while loading, and not on a failed lookup: in both of
+          those the page cannot yet say whether the tutor has anything to answer
+          from, and offering the interaction anyway invites either a premature
+          question or a refusal with no explanation.
         */}
-        {materialsLoading || (!materialsFailed && materials.length > 0) ? (
+        {!materialsLoading && !materialsFailed && materials.length > 0 ? (
         <div className="grid lg:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
             <Card className="academic-card p-5">

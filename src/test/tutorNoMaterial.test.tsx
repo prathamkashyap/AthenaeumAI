@@ -124,6 +124,52 @@ describe("a confirmed empty library", () => {
   });
 });
 
+describe("while the library lookup is still in flight", () => {
+  it("does not render the question box", async () => {
+    // Never settles. This isolates the loading state from both the empty and
+    // the resolved branches.
+    apiFetch.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <MemoryRouter>
+        <Tutor />
+      </MemoryRouter>
+    );
+
+    // The tutor cannot yet say whether it has material to ground an answer in,
+    // so offering the box would let a fast learner submit a question whose only
+    // possible outcome is a refusal.
+    await waitFor(() => expect(apiFetch).toHaveBeenCalled());
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("shows a loading indicator rather than a blank page", async () => {
+    apiFetch.mockImplementation(() => new Promise(() => {}));
+
+    const { container } = render(
+      <MemoryRouter>
+        <Tutor />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(apiFetch).toHaveBeenCalled());
+    // Withholding the interaction must not leave nothing at all on screen.
+    expect(container.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("renders the question box once the library resolves with material", async () => {
+    // The counterpart, so the fix cannot be satisfied by never rendering it.
+    apiFetch.mockImplementation((url: string) => {
+      if (url === "/library") return Promise.resolve(ok({ materials: [material] }));
+      return Promise.resolve(ok({ answer: "unused" }));
+    });
+
+    await renderPage();
+
+    expect(await screen.findByRole("textbox")).toBeTruthy();
+  });
+});
+
 describe("when material exists, nothing changes", () => {
   beforeEach(() => {
     apiFetch.mockImplementation((url: string) => {
