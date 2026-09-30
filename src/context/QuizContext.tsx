@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 
 const API_BASE = "/quiz";
@@ -60,6 +60,31 @@ export interface BackgroundProcessing {
   status: "pending" | "queued" | "running" | "completed" | "failed" | "not_scheduled";
   jobId?: string;
   error?: { code: string | null; message: string | null } | null;
+  /**
+   * Set when status could not be read, as distinct from the job failing.
+   *
+   * A failed request tells us nothing about the job. The index may well be
+   * running fine, and reporting a tracking failure as a failed index would invent
+   * a conclusion the server never drew — and would tell a learner their material
+   * is unusable when it may be perfectly searchable.
+   */
+  trackingError?: string | null;
+}
+
+/**
+ * A job status as returned by `GET /api/v1/jobs/:id`.
+ *
+ * That endpoint's projection names the task `type`, not `task`, so the two
+ * responses describing the same job do not share a shape. The mapping is done
+ * explicitly in one place rather than spread across callers, because a field read
+ * from the wrong shape is silently `undefined` and would leave the panel unable
+ * to say what it is tracking.
+ */
+interface JobStatusResponse {
+  jobId?: string;
+  type?: string;
+  status?: BackgroundProcessing["status"];
+  error?: { code: string | null; message: string | null } | null;
 }
 
 /**
@@ -91,6 +116,14 @@ interface QuizContextType {
    * exactly what lets the tutor answer from that material later.
    */
   backgroundProcessing: BackgroundProcessing | null;
+  /**
+   * Reads the current status of a tracked job.
+   *
+   * Exposed rather than only used internally so the polling loop and its tests
+   * drive the same request the loop makes, and so a caller holding a job id from
+   * elsewhere can read it without reaching into the context's internals.
+   */
+  fetchJobStatus: (jobId: string) => Promise<BackgroundProcessing | null>;
   generateQuiz: (file: File, difficulty: string, count?: number) => Promise<QuizData>;
   fetchQuiz: (id: string) => Promise<QuizData>;
   setResult: (result: AttemptResult) => void;
@@ -104,6 +137,26 @@ const QuizContext = createContext<QuizContextType | null>(null);
 const getErrorMessage = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback;
 
+/**
+ * How often a non-terminal job is re-read.
+ *
+ * A fixed interval, deliberately. The states being watched change over seconds, the
+ * cost is a single authenticated read of a small document, and a schedule that
+ * adapts would be a second thing to get wrong for no measurable benefit. A poll
+ * that stops early is bounded by the first terminal state; one that never stops
+ * would be a bug in the loop, not a reason to slow it down.
+ */
+export const JOB_STATUS_POLL_INTERVAL_MS = 1000;
+
+/** Statuses the backend will not move away from. */
+const TERMINAL_STATUSES = new Set<BackgroundProcessing["status"]>([
+  "completed",
+  "failed",
+  "not_scheduled",
+]);
+
+const isTerminalStatus = (status: BackgroundProcessing["status"]) => TERMINAL_STATUSES.has(status);
+
 export function QuizProvider({ children }: { children: ReactNode }) {
   const [currentQuiz, setCurrentQuiz] = useState<QuizData | null>(null);
   const [lastResult, setLastResult] = useState<AttemptResult | null>(null);
@@ -111,6 +164,74 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   const [generationProgress, setGenerationProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [backgroundProcessing, setBackgroundProcessing] = useState<BackgroundProcessing | null>(null);
+
+  const fetchJobStatus = useCallback(async (jobId: string): Promise<BackgroundProcessing | null> => {
+    try {
+      const res = await apiFetch(`/jobs/${jobId}`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as JobStatusResponse;
+      // A response without a recognisable status is not a status. Returning null
+      // keeps the last known state rather than overwriting it with a guess.
+      if (!data?.status) return null;
+      return {
+        task: data.type || "INDEX_MATERIAL",
+        status: data.status,
+        jobId: data.jobId || jobId,
+        error: data.error ?? null,
+      };
+    } catch {
+      // A read that failed says nothing about the job. The caller keeps the last
+      // known state and records that tracking failed, rather than concluding the
+      // index failed.
+      return null;
+    }
+  }, []);
+
+  /**
+   * Follows the indexing job until it settles.
+   *
+   * Depends on the status as well as the job id, and that is load-bearing rather
+   * than incidental. The interval's own callback cannot stop itself: by the time
+   * a tick learns the job has completed, the timer that fired it is already
+   * scheduled, and an effect keyed only on the job id would not re-run to clear
+   * it. Keying on the status makes the terminal state tear the loop down through
+   * the effect's own cleanup.
+   *
+   * The cost is that a non-terminal transition restarts the interval, which resets
+   * the countdown. With a one-second period and a handful of transitions that is
+   * irrelevant, and it is the reason the loop cannot outlive its job.
+   */
+  useEffect(() => {
+    const jobId = backgroundProcessing?.jobId;
+    const status = backgroundProcessing?.status;
+
+    if (!jobId || !status || isTerminalStatus(status)) return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      const latest = await fetchJobStatus(jobId);
+      if (cancelled) return;
+
+      if (!latest) {
+        // Keep the status we already have; only the tracking is degraded.
+        setBackgroundProcessing((previous) =>
+          previous && previous.jobId === jobId
+            ? { ...previous, trackingError: "Could not read the latest indexing status." }
+            : previous,
+        );
+        return;
+      }
+
+      setBackgroundProcessing(latest);
+    };
+
+    const timer = setInterval(poll, JOB_STATUS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [backgroundProcessing?.jobId, backgroundProcessing?.status, fetchJobStatus]);
 
   const generateQuiz = useCallback(async (file: File, difficulty: string, count: number = 5): Promise<QuizData> => {
     setIsGenerating(true);
@@ -202,7 +323,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   return (
     <QuizContext.Provider
       value={{ currentQuiz, lastResult, isGenerating, generationProgress, error, backgroundProcessing,
-        generateQuiz, fetchQuiz, setResult, saveAttempt, clearError, clearQuiz }}
+        fetchJobStatus, generateQuiz, fetchQuiz, setResult, saveAttempt, clearError, clearQuiz }}
     >
       {children}
     </QuizContext.Provider>

@@ -132,6 +132,9 @@ export function IndexingStatus({ backgroundProcessing }: IndexingStatusProps) {
   // text with no queue or infrastructure detail, and it is more specific than
   // anything this panel could infer.
   const backendMessage = backgroundProcessing.error?.message;
+  // A tracking failure is about this client's ability to read the job, not about
+  // the job. It is reported separately so it can never be mistaken for one.
+  const trackingError = backgroundProcessing.trackingError;
 
   return (
     <Card
@@ -154,6 +157,16 @@ export function IndexingStatus({ backgroundProcessing }: IndexingStatusProps) {
           <p className="text-sm text-muted-foreground">{presentation.detail}</p>
           {backendMessage && (
             <p className="text-xs text-muted-foreground">{backendMessage}</p>
+          )}
+          {trackingError && (
+            // Deliberately separate from the title, the badge and the detail. A
+            // failed read tells us nothing about the job, so this must not read as
+            // "indexing failed" — the index may be running perfectly well. Saying
+            // so would tell a learner their material is unusable on the strength of
+            // a network hiccup.
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {trackingError} The status shown above is the last one read.
+            </p>
           )}
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
             <Search className="h-3 w-3" aria-hidden="true" />
