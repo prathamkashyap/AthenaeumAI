@@ -80,8 +80,25 @@ const Harness = () => (
   </QuizProvider>
 );
 
+/**
+ * One scripted step in a job-status read.
+ *
+ * A step is either the body the status endpoint returns, or a sentinel that makes
+ * the *read* fail rather than the job. Both forms are needed: the tests in "a read
+ * that fails is not a failed index" assert precisely that distinction, so the
+ * script has to be able to express a failing read at all. The annotation this
+ * replaces described only the object case, which left the sentinel call sites
+ * untypecheckable even though they were the point of the suite.
+ */
+type JobStatusBody = ReturnType<typeof job>;
+
+/** A read that throws, or one that answers with a non-ok status. */
+type ReadFailure = "ERROR" | "NOT_OK";
+
+type ScriptedStep = JobStatusBody | ReadFailure;
+
 /** Serves the upload, then a scripted sequence of job reads. */
-const script = (statuses: Array<Record<string, unknown>>) => {
+const script = (statuses: ScriptedStep[]) => {
   let call = 0;
   apiFetch.mockImplementation(async (path: string) => {
     if (typeof path === "string" && path.includes("/generate")) {

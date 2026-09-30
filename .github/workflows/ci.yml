@@ -97,8 +97,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # `npx tsc --noEmit` at the repository root resolves tsconfig.json, which is
+      # a solution-style config with "files": [] and project references — it
+      # type-checks nothing and reports success unconditionally. The frontend is
+      # described by tsconfig.app.json, so that is the project this must build.
       - name: TypeScript type check
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build production bundle
         run: npm run build
