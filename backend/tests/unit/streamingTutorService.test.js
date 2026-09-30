@@ -89,14 +89,29 @@ describe("streamTutorResponse", () => {
     await expect(collect(await streamTutorResponse(ARGS))).resolves.toEqual([]);
   });
 
-  test("states plainly when no material context was retrieved", async () => {
+  test("does not call the provider when nothing was retrieved", async () => {
+    // This replaced a test asserting the opposite. It previously pinned the
+    // behaviour that the provider WAS asked to handle empty context, with
+    // "No matching uploaded material chunks were found." interpolated into the
+    // prompt and the model left to decide whether that was enough to answer.
+    //
+    // That is not a grounding contract: the model was consulted about whether it
+    // had evidence, and could answer anyway. The decision now happens in code,
+    // before the provider is touched, and a refusal is returned as a stream so
+    // the HTTP layer needs no change.
     const provider = createMockAIProvider({ answer: "No matching material." });
     setAIProvider(provider);
 
-    await streamTutorResponse({ ...ARGS, materialContexts: [] });
+    const chunks = await collect(await streamTutorResponse({ ...ARGS, materialContexts: [] }));
 
-    expect(provider.stream.mock.calls[0][0].messages[1].content)
-      .toContain("No matching uploaded material chunks were found.");
+    expect(provider.stream).not.toHaveBeenCalled();
+    expect(provider.complete).not.toHaveBeenCalled();
+    // Still a well-formed SSE body, so the controller's iteration and `[DONE]`
+    // are unchanged and a refusal cannot surface as a client error.
+    expect(chunks).toHaveLength(1);
+    const payload = JSON.parse(chunks[0].content);
+    expect(payload.grounding).toMatchObject({ grounded: false, reason: "no_context", streamed: true });
+    expect(payload.groundedSources).toEqual([]);
   });
 
   test("does not call the non-streaming completion path", async () => {
@@ -192,6 +207,108 @@ describe("streamTutorResponse", () => {
 
     expect(chunks).toHaveLength(4);
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  // ─── The grounding gate ─────────────────────────────────────────────────────
+  //
+  // The same four cases as the non-streaming suite, because the point of the
+  // contract is that the two paths cannot disagree. If these ever diverge, one of
+  // them is deciding something the other does not.
+
+  test("grounds and streams normally when at least one chunk carries evidence", async () => {
+    const provider = createMockAIProvider({ answer: "Consider circular wait." });
+    setAIProvider(provider);
+
+    const chunks = await collect(await streamTutorResponse(ARGS));
+
+    expect(provider.stream).toHaveBeenCalledTimes(1);
+    expect(chunks.length).toBeGreaterThan(1);
+  });
+
+  test("one unusable neighbour does not suppress a real match", async () => {
+    // Matches the non-streaming rule: some evidence grounds, not unanimity.
+    const provider = createMockAIProvider({ answer: "Consider circular wait." });
+    setAIProvider(provider);
+
+    const chunks = await collect(await streamTutorResponse({
+      ...ARGS,
+      materialContexts: [
+        { sourceTitle: "Irrelevant", chunkIndex: 0, score: 0, chunkText: "Unrelated passage." },
+        { sourceTitle: "OS Notes", chunkIndex: 3, score: 0.41, chunkText: "Deadlock requires circular wait." },
+      ],
+    }));
+
+    expect(provider.stream).toHaveBeenCalledTimes(1);
+    expect(chunks.length).toBeGreaterThan(1);
+  });
+
+  test("a wholly zero-scored result set never reaches the provider", async () => {
+    const provider = createMockAIProvider({ answer: "Guess." });
+    setAIProvider(provider);
+
+    const chunks = await collect(await streamTutorResponse({
+      ...ARGS,
+      materialContexts: [
+        { sourceTitle: "A", chunkIndex: 0, score: 0, chunkText: "Unrelated." },
+        { sourceTitle: "B", chunkIndex: 1, score: 0, chunkText: "Also unrelated." },
+      ],
+    }));
+
+    expect(provider.stream).not.toHaveBeenCalled();
+    expect(chunks).toHaveLength(1);
+    const payload = JSON.parse(chunks[0].content);
+    expect(payload.grounding.reason).toBe("no_lexical_evidence");
+  });
+
+  test("the refusal payload matches the non-streaming refusal", async () => {
+    // Both paths hand the client one document. If the wording or shape drifted,
+    // the same question would be refused differently depending on transport.
+    const provider = createMockAIProvider({ answer: "unused" });
+    setAIProvider(provider);
+
+    const chunks = await collect(await streamTutorResponse({ ...ARGS, materialContexts: [] }));
+    const streamed = JSON.parse(chunks[0].content);
+
+    const {
+      evaluateTutorGrounding,
+      insufficientContextResponse,
+    } = await import("../../services/tutorGrounding.js");
+    const expected = insufficientContextResponse({
+      question: ARGS.question,
+      grounding: { ...evaluateTutorGrounding([]), streamed: true },
+    });
+
+    expect(streamed.answer).toBe(expected.answer);
+    expect(streamed.groundedSources).toEqual(expected.groundedSources);
+    expect(streamed.retrievedContext).toEqual(expected.retrievedContext);
+    expect(streamed.revisionPlan).toEqual(expected.revisionPlan);
+    expect(streamed.suggestedFollowUps).toEqual(expected.suggestedFollowUps);
+  });
+
+  test("the refusal does not claim the model was consulted", async () => {
+    // A streamed refusal that said "I could not answer" would imply a generation
+    // attempt that never happened.
+    setAIProvider(createMockAIProvider({ answer: "unused" }));
+
+    const chunks = await collect(await streamTutorResponse({ ...ARGS, materialContexts: [] }));
+    const payload = JSON.parse(chunks[0].content);
+
+    expect(payload.answer).toMatch(/could not find anything/i);
+    expect(payload.answer).not.toMatch(/\bI (?:could not|cannot) (?:answer|help)\b/i);
+  });
+
+  test("a refusal still terminates as a normal stream rather than throwing", async () => {
+    // The controller writes `[DONE]` after iteration and treats a throw as a
+    // transport error. A refusal must not take either branch.
+    setAIProvider(createMockAIProvider({ answer: "unused" }));
+
+    const stream = await streamTutorResponse({ ...ARGS, materialContexts: [] });
+    const seen = [];
+    await expect((async () => {
+      for await (const chunk of stream) seen.push(chunk.content);
+    })()).resolves.toBeUndefined();
+
+    expect(seen).toHaveLength(1);
   });
 
   test("propagates a failure raised part way through the stream", async () => {

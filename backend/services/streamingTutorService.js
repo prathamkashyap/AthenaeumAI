@@ -1,5 +1,23 @@
 import logger from "../utils/logger.js";
 import { getAIProvider } from "./aiProvider.js";
+import {
+  evaluateTutorGrounding,
+  insufficientContextResponse,
+} from "./tutorGrounding.js";
+
+/**
+ * The refusal stream, as a plain async iterable of `{ content }` chunks.
+ *
+ * Returning a stream rather than throwing keeps the HTTP contract identical to a
+ * successful tutoring response: the controller still sets the event-stream
+ * headers, still iterates, and still writes `[DONE]`, so a refusal needs no
+ * controller change and cannot surface as a client-side error. It is the same
+ * payload the non-streaming path returns, JSON-encoded, so both paths hand the
+ * client one refusal document.
+ */
+const refusalStream = (payload) => (async function* refuse() {
+  yield { content: JSON.stringify(payload) };
+})();
 
 export const streamTutorResponse = async ({
   question,
@@ -8,6 +26,22 @@ export const streamTutorResponse = async ({
   mistakeHistory,
   flashcards,
 }) => {
+  // Same decision, same module, same result as the non-streaming tutor. The gate
+  // sits before the provider is touched, so an ungrounded question cannot reach
+  // the model on either path.
+  const grounding = evaluateTutorGrounding(materialContexts);
+
+  if (!grounding.grounded) {
+    logger.info("Tutor stream refused without calling the model: no retrieved evidence", {
+      reason: grounding.reason,
+      consideredCount: grounding.consideredCount,
+    });
+
+    return refusalStream(
+      insufficientContextResponse({ question, grounding: { ...grounding, streamed: true } }),
+    );
+  }
+
   const contextText = materialContexts.map((context, index) => (
     `[SOURCE ${index + 1}]
 Title: ${context.sourceTitle}

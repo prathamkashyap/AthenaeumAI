@@ -28,6 +28,21 @@ This document lists the architectural limitations of the current AthenaeumAI pla
 
 ---
 
+## 🛡️ The Tutor Grounding Gate Detects Absent Evidence, Not Wrong Evidence
+- **Limitation**: `tutorGrounding.js` makes an explicit grounding decision before the model is called, and refuses when retrieval produced **no evidence at all** — an empty result set, or a set in which every score is exactly zero. It cannot detect a *confidently retrieved wrong chunk*.
+- **Why there is no numeric confidence threshold**: this was measured rather than assumed. Across three independent query sets over the frozen evaluation corpus, the production retriever's top-1 score for a query whose answer was **not** retrieved falls **entirely inside** the range of the top-1 score for a query whose answer **was** retrieved:
+
+  | Top-1 combined score | Range |
+  | --- | --- |
+  | Correct answer retrieved | 0.168 – 0.611 |
+  | Wrong answer retrieved | 0.136 – 0.507 |
+
+  Sweeping every threshold from 0.00 to 0.65 in steps of 0.01, **no value both rejects every wrong case and keeps every correct one**. The highest threshold that rejects all wrong cases discards 20 of 37 correct ones. Lexical coverage and the top-1-minus-top-2 margin overlap the same way. A constant such as `0.35` would not be a calibration: it would reject most correctly-answered questions *and* still admit confidently-ranked wrong chunks, converting a visible failure into a silent one.
+- **Impact**: the gate prevents the tutor from claiming to be grounded when it retrieved nothing, and it does so in code rather than by asking the model to use judgement. It does **not** raise answer quality on questions where retrieval returns a plausible-looking but wrong chunk. A question about the wrong topic can still be answered, still cited, and still be wrong — and it will pass this gate.
+- **What would actually close it**: a retriever whose scores separate correct from incorrect retrieval, which the current one demonstrably does not; or a verification step after generation. The retrieval evaluation is the evidence for both claims.
+
+---
+
 ## 📬 Background Work Can Be Committed To But Unscheduled
 - **Limitation**: Durable application state is written and committed *before* its background job is scheduled. `POST /quiz/generate` commits the material and quiz, then enqueues `INDEX_MATERIAL`; `POST /quiz/:id/attempt` writes the attempt, then enqueues `SYNC_ATTEMPT`. If Redis is unavailable at that point, the commit has already succeeded and cannot be undone.
 - **Current behaviour**: Since `829a226`/`Make queue failures truthful after commit`, a scheduling failure is no longer reported as a failure of the business operation. The endpoint returns **200** with its normal success payload plus an additive field:

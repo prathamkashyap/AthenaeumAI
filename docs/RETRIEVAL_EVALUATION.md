@@ -29,7 +29,7 @@ production retrieval entry point, called by `gatherTutorContext`
 | Corpus scope | Always `{ user: userId }`, optional `studyMaterial` filter (`embeddingService.js:181-182`) |
 | Query mechanism | Whole scoped corpus loaded into Node and ranked there. No ANN, no vector index (`embeddingService.js:184-200`) |
 | Indexing | Both eager (the `INDEX_MATERIAL` background job) and lazily re-checked on **every** search via `ensureChunksForUser` (`embeddingService.js:179`) |
-| Refusal threshold | **None.** Top-N is returned regardless of score, including when every score is 0. |
+| Refusal threshold | **None.** Top-N is returned regardless of score, including when every score is 0. The tutor applies its own grounding gate downstream (`services/tutorGrounding.js`), which refuses only when *no* chunk carries a non-zero score. See `docs/KNOWN_LIMITATIONS.md`: no score threshold can separate correct from incorrect retrieval on this retriever, so no threshold is applied. |
 
 **This retriever is lexical.** It produces a numeric similarity score, but a
 non-zero score requires either a shared exact token or an accidental hash-bucket

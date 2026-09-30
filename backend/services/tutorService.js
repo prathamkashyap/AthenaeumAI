@@ -5,6 +5,7 @@ import UserProgress from "../models/UserProgress.js";
 import { generateTutorResponseFromAI } from "./aiQuizService.js";
 import { searchMaterialChunks } from "./embeddingService.js";
 import { recordLearningEvent } from "./learningEventService.js";
+import { evaluateTutorGrounding, insufficientContextResponse } from "./tutorGrounding.js";
 
 const fallbackTutorResponse = ({ question, materialContexts, weakTopics }) => {
   const bestContext = materialContexts[0];
@@ -137,6 +138,49 @@ export const askContextualTutor = async ({ userId, question, materialId = null }
   const context = await gatherTutorContext({ userId, question, materialId });
   const { trimmedQuestion, materialContexts, weakTopics, retrievedTopics, mistakeHistory, flashcards } = context;
 
+  // The grounding decision is made here, before the model is consulted, and it is
+  // the same decision the streaming path makes. A refusal is returned without the
+  // model ever being called, so "the tutor answered" can no longer mean "the model
+  // decided the context was good enough". See `tutorGrounding.js` for why this
+  // refuses only on absent evidence and not on a score threshold.
+  const grounding = evaluateTutorGrounding(materialContexts);
+
+  if (!grounding.grounded) {
+    logger.info("Tutor refused without calling the model: no retrieved evidence", {
+      userId,
+      reason: grounding.reason,
+      consideredCount: grounding.consideredCount,
+    });
+
+    await recordLearningEvent({
+      userId,
+      topic: weakTopics[0]?.topic || retrievedTopics[0] || "General",
+      eventType: "ai_tutoring_interaction",
+      // Distinct from the pre-existing "partial", which meant the model failed or
+      // context was empty. Here the retrieval ran and returned nothing usable, so
+      // the interaction is recorded as a refusal rather than a partial answer.
+      result: "insufficient_context",
+      confidence: weakTopics[0]?.confidence || 0,
+      difficulty: weakTopics[0]?.recommendedDifficulty || "",
+      metadata: {
+        question: trimmedQuestion,
+        materialId,
+        retrievedChunkIds: materialContexts.map((context) => context._id),
+        sourceCount: materialContexts.length,
+        grounding,
+      },
+    });
+
+    return {
+      ...insufficientContextResponse({ question: trimmedQuestion, grounding }),
+      learnerContext: {
+        weakTopics,
+        mistakeHistory,
+        flashcards,
+      },
+    };
+  }
+
   let response;
   try {
     response = await generateTutorResponseFromAI({
@@ -169,6 +213,10 @@ export const askContextualTutor = async ({ userId, question, materialId = null }
   return {
     question: trimmedQuestion,
     ...response,
+    // Additive: lets a client or a log tell a grounded answer from a refusal
+    // without inspecting prose. The client does not declare this field and is
+    // unaffected by its presence.
+    grounding,
     retrievedContext: materialContexts.map((context, index) => ({
       sourceNumber: index + 1,
       chunkId: context._id,
