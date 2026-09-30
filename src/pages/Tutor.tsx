@@ -5,13 +5,38 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiFetch } from "@/lib/api";
-import { Bot, Brain, FileText, Loader2, Send, Sparkles } from "lucide-react";
+import { Bot, Brain, FileCheck2, FileText, Info, Loader2, Send, Sparkles } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 interface Material {
   _id: string;
   title: string;
   originalFileName: string;
+}
+
+interface RetrievedSource {
+  sourceNumber: number;
+  sourceTitle: string;
+  chunkIndex: number;
+  score: number;
+  preview: string;
+  topics: string[];
+}
+
+/**
+ * The backend's grounding decision, as of the explicit contract.
+ *
+ * Optional because a response predating the contract carries no such field, and
+ * because treating a missing field as `grounded: false` would label every older
+ * response a refusal. The absence is handled explicitly below rather than
+ * defaulted into one of the two known states.
+ */
+interface GroundingDecision {
+  grounded: boolean;
+  reason: string | null;
+  evidenceCount: number;
+  consideredCount: number;
+  bestScore: number;
 }
 
 interface TutorResponse {
@@ -21,15 +46,38 @@ interface TutorResponse {
   personalizedNotes: string[];
   revisionPlan: string[];
   suggestedFollowUps: string[];
-  retrievedContext: {
-    sourceNumber: number;
-    sourceTitle: string;
-    chunkIndex: number;
-    score: number;
-    preview: string;
-    topics: string[];
-  }[];
+  retrievedContext: RetrievedSource[];
+  grounding?: GroundingDecision;
 }
+
+/**
+ * The three states the UI distinguishes.
+ *
+ * `unreported` exists because the field is additive: a response from before the
+ * grounding contract, or from a deployment that has not shipped it, has no
+ * decision at all. That is not the same as a refusal, and rendering it as one
+ * would tell a learner the tutor declined to answer something it did answer.
+ */
+type TutorViewState = "grounded" | "insufficient" | "unreported";
+
+const resolveViewState = (response: TutorResponse | null): TutorViewState => {
+  if (!response?.grounding) return "unreported";
+  // Only an explicit `false` is a refusal. A truthiness test here would classify
+  // a malformed or partial decision — `{ grounded: undefined }` — as a refusal
+  // and tell a learner the tutor declined to answer an answer it did give.
+  return response.grounding.grounded === false ? "insufficient" : "grounded";
+};
+
+/**
+ * Sources shown for a grounded answer.
+ *
+ * Empty for a refusal even though `retrievedContext` is populated, because the
+ * backend returns the chunks it considered alongside a refusal for diagnostic
+ * purposes. Presenting them as sources for an answer that was never given would
+ * be the one thing this UI must never do.
+ */
+const citableSources = (response: TutorResponse | null, state: TutorViewState) =>
+  state === "insufficient" ? [] : response?.retrievedContext ?? [];
 
 const Tutor = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -50,6 +98,21 @@ const Tutor = () => {
     if (materialId === "all") return "All indexed materials";
     return materials.find((material) => material._id === materialId)?.title || "Selected material";
   }, [materialId, materials]);
+
+  // The backend decision is the single source of truth for how the response is
+  // presented. Nothing below infers grounding from the answer's wording, its
+  // length, or how many sources came back: a model that answers confidently from
+  // three irrelevant chunks looks identical to one that answers from the right
+  // one, and only the server knows which happened.
+  const viewState = resolveViewState(response);
+  const isRefusal = viewState === "insufficient";
+  const sources = citableSources(response, viewState);
+  const sourcesWithReasons = useMemo(() => {
+    const reasons = new Map(
+      (response?.groundedSources ?? []).map((source) => [source.sourceNumber, source.whyRelevant]),
+    );
+    return sources.map((source) => ({ ...source, whyRelevant: reasons.get(source.sourceNumber) }));
+  }, [sources, response?.groundedSources]);
 
   const askTutor = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -143,7 +206,36 @@ const Tutor = () => {
                     <Bot className="h-5 w-5 text-accent" />
                   </div>
                   <div className="flex-1 space-y-3">
-                    <Badge variant="outline" className="border-accent/40 text-accent">Grounded response</Badge>
+                    {/* Grounding state is announced, not merely coloured: the icon and
+                        the text both carry it, so it survives a screen reader and a
+                        greyscale display. The wording claims only what the backend
+                        established — that evidence was present — not that the answer
+                        is correct, complete, or semantically understood. */}
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex items-center gap-2 flex-wrap"
+                    >
+                      {isRefusal ? (
+                        <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400 gap-1.5">
+                          <Info className="h-3 w-3" aria-hidden="true" />
+                          No supporting material found
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-accent/40 text-accent gap-1.5">
+                          <FileCheck2 className="h-3 w-3" aria-hidden="true" />
+                          Based on your uploaded material
+                        </Badge>
+                      )}
+                    </div>
+
+                    {isRefusal && (
+                      <p className="text-sm text-muted-foreground">
+                        Your uploaded material did not provide evidence for this question, so the tutor
+                        did not attempt an answer.
+                      </p>
+                    )}
+
                     <p className="text-base leading-relaxed text-foreground whitespace-pre-wrap">{response.answer}</p>
                   </div>
                 </div>
@@ -185,21 +277,54 @@ const Tutor = () => {
 
           <aside className="space-y-4">
             <Card className="academic-card p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-4">Retrieved Sources</p>
-              {response?.retrievedContext?.length ? (
-                <div className="space-y-3">
-                  {response.retrievedContext.map((source) => (
-                    <div key={`${source.sourceTitle}-${source.chunkIndex}`} className="rounded-lg border border-border bg-card/30 p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <p className="text-sm font-medium truncate">{source.sourceTitle}</p>
-                        <Badge variant="outline" className="text-[10px] border-border font-mono">
-                          {Math.round(source.score * 100)}%
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-4">
+                {isRefusal ? "No Sources" : "Sources Used"}
+              </p>
+
+              {isRefusal ? (
+                // No source list at all on a refusal. The backend returns the chunks
+                // it weighed so the refusal is auditable server-side, but they are
+                // not sources for an answer, and listing them under any heading
+                // invites the reader to treat them as one.
+                <p className="text-sm text-muted-foreground">
+                  No sources are shown because the tutor did not answer from your material.
+                </p>
+              ) : sources.length > 0 ? (
+                <ol className="space-y-3" aria-label="Sources used for this answer">
+                  {sourcesWithReasons.map((source) => (
+                    <li
+                      key={`${source.sourceNumber}-${source.sourceTitle}-${source.chunkIndex}`}
+                      className="rounded-lg border border-border bg-card/30 p-3"
+                    >
+                      <div className="flex items-start gap-2 mb-2">
+                        {/* The source number is the citation handle the answer can be
+                            checked against, so it is given an accessible name rather
+                            than being read as a bare digit. */}
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] border-border font-mono shrink-0"
+                          aria-label={`Source ${source.sourceNumber}`}
+                        >
+                          [{source.sourceNumber}]
                         </Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{source.sourceTitle}</p>
+                          {/* The chunk index is what the API actually supplies. There is
+                              no page number, offset or location in the response, and
+                              inventing one would send a learner looking for something
+                              that does not exist. */}
+                          <p className="text-[11px] text-muted-foreground font-mono">
+                            Section {source.chunkIndex + 1}
+                          </p>
+                        </div>
                       </div>
+                      {source.whyRelevant && (
+                        <p className="text-xs text-muted-foreground mb-2">{source.whyRelevant}</p>
+                      )}
                       <p className="text-xs text-muted-foreground line-clamp-4">{source.preview}</p>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               ) : (
                 <p className="text-sm text-muted-foreground">Sources will appear after a tutor response.</p>
               )}
