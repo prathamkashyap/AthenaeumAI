@@ -238,9 +238,24 @@ describe("responses predating the grounding contract", () => {
     await ask(legacy);
 
     // No decision means no claim either way. Showing the grounded badge would
-    // assert a grounding the response never reported.
+    // assert a grounding the response never reported, and the refusal badge
+    // would accuse the tutor of declining an answer it gave.
     expect(screen.getByText(GROUNDED.answer)).toBeInTheDocument();
+    expect(screen.getByText(/grounding not reported/i)).toBeInTheDocument();
+    expect(screen.queryByText(/based on your uploaded material/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no supporting material found/i)).not.toBeInTheDocument();
+  });
+
+  it("states that grounding was not reported rather than implying anything", async () => {
+    const { grounding, ...legacy } = GROUNDED;
+    void grounding;
+
+    await ask(legacy);
+
+    // Withheld is not the same as unsupported: the wording must not tell the
+    // learner their material failed to support the answer.
+    expect(screen.queryByText(/did not provide evidence/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no sources are shown/i)).not.toBeInTheDocument();
   });
 
   it("still lists sources for a legacy response", async () => {
@@ -252,10 +267,37 @@ describe("responses predating the grounding contract", () => {
     expect(screen.getByRole("list", { name: /sources used for this answer/i })).toBeInTheDocument();
   });
 
-  it("does not mistake a malformed grounding object for a refusal", async () => {
+  it("makes no grounding claim for a malformed grounding object", async () => {
+    // `grounded` is a boolean at a runtime boundary, so a payload that reports
+    // neither `true` nor `false` carries no decision this client may interpret.
+    // Presenting it as grounded would put a "Based on your uploaded material"
+    // badge on a response that never reported one.
     await ask({ ...GROUNDED, grounding: { grounded: undefined } });
 
     expect(screen.getByText(GROUNDED.answer)).toBeInTheDocument();
     expect(screen.queryByText(/no supporting material found/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/based on your uploaded material/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a string", "yes"],
+    ["a number", 1],
+    ["null", null],
+  ])("makes no grounding claim when `grounded` is %s", async (_label, value) => {
+    await ask({ ...GROUNDED, grounding: { grounded: value } });
+
+    expect(screen.getByText(GROUNDED.answer)).toBeInTheDocument();
+    // Neither claim may be made from a value that is not a boolean decision.
+    expect(screen.queryByText(/based on your uploaded material/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no supporting material found/i)).not.toBeInTheDocument();
+  });
+
+  it("still lists sources when the grounding decision is unreadable", async () => {
+    // Not making a grounding claim is not the same as hiding the answer's own
+    // citations. The chunks are still what the backend sent, and the learner
+    // still needs to see them to judge the answer.
+    await ask({ ...GROUNDED, grounding: { grounded: "yes" } });
+
+    expect(screen.getByRole("list", { name: /sources used for this answer/i })).toBeInTheDocument();
   });
 });

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiFetch } from "@/lib/api";
-import { Bot, Brain, FileCheck2, FileText, Info, Loader2, Send, Sparkles } from "lucide-react";
+import { Bot, Brain, FileCheck2, FileText, HelpCircle, Info, Loader2, Send, Sparkles } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 interface Material {
@@ -61,11 +61,22 @@ interface TutorResponse {
 type TutorViewState = "grounded" | "insufficient" | "unreported";
 
 const resolveViewState = (response: TutorResponse | null): TutorViewState => {
-  if (!response?.grounding) return "unreported";
-  // Only an explicit `false` is a refusal. A truthiness test here would classify
-  // a malformed or partial decision — `{ grounded: undefined }` — as a refusal
-  // and tell a learner the tutor declined to answer an answer it did give.
-  return response.grounding.grounded === false ? "insufficient" : "grounded";
+  const grounded = response?.grounding?.grounded;
+
+  // Three cases, and the middle one is deliberately narrow. `grounded` is a
+  // boolean at a runtime boundary, so a value that is not literally `true` or
+  // `false` is not a decision this client is entitled to interpret: it may be a
+  // partial payload, a renamed field, or an intermediary serialisation.
+  //
+  // Treating an unreadable decision as `grounded` would put a "Based on your
+  // uploaded material" badge on a response that never reported one, which is a
+  // claim the payload does not support. Treating it as `insufficient` would
+  // accuse the tutor of declining to answer something it did answer. Neither
+  // inference is available to the client, so the answer is neither: the state is
+  // unreported, and the UI makes no grounding claim at all.
+  if (grounded === true) return "grounded";
+  if (grounded === false) return "insufficient";
+  return "unreported";
 };
 
 /**
@@ -216,10 +227,19 @@ const Tutor = () => {
                       aria-live="polite"
                       className="flex items-center gap-2 flex-wrap"
                     >
+                      {/* A third rendering, not a fallback: the backend reported no
+                          decision this client can read, so the page asserts no
+                          grounding at all rather than guessing one. The answer and
+                          its citations still render — only the claim is withheld. */}
                       {isRefusal ? (
                         <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400 gap-1.5">
                           <Info className="h-3 w-3" aria-hidden="true" />
                           No supporting material found
+                        </Badge>
+                      ) : viewState === "unreported" ? (
+                        <Badge variant="outline" className="border-border text-muted-foreground gap-1.5">
+                          <HelpCircle className="h-3 w-3" aria-hidden="true" />
+                          Grounding not reported
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="border-accent/40 text-accent gap-1.5">
