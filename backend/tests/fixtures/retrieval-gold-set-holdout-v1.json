@@ -1,0 +1,179 @@
+{
+  "name": "athenaeum-retrieval-holdout",
+  "version": "1.0.0",
+  "independentOf": ["retrieval-gold-set.json v1.0.0 (Task 10)", "retrieval-gold-set-v2.json v2.0.0 (Task 16B)"],
+  "description": "An independent holdout of ordinary learner questions over the Task 16B corpus. Its only purpose is to test whether the BM25 advantage measured on v2 transfers to questions that were not authored as traps. v2's three BM25 wins are concentrated in cases deliberately constructed to catch frequency over-weighting and length insensitivity, which are the exact properties BM25's IDF and length normalisation are built to fix. A benchmark written by the same hand as those traps cannot answer whether the advantage is general. These questions were written to be unremarkable.",
+  "labelSemantics": "A chunk is relevant to a query when it is the passage a learner would consult to answer the question. Partial topical overlap is NOT sufficient. Where the subject matter genuinely requires two passages to answer well, both are labeled and the adjudication says why.",
+  "independenceProtocol": "This is a process guarantee, not something a test can prove. The protocol was: (1) read the frozen Task 16B corpus; (2) write the questions a learner revising these notes would plausibly ask, in ordinary language; (3) adjudicate each label by reading the subject matter and deciding which passage answers the question; (4) freeze this file; (5) only then run either retriever. No retriever was executed against these questions before step 5, no ranking was inspected while choosing labels, no query was added or removed because of how a retriever scored it, no parameter was tuned, and the corpus was not modified. The structural tests below verify what is mechanically verifiable — unique ids, resolvable keys, stored scores absent, deterministic evaluation, identical inputs to both retrievers. The independence of the human judgement is established by the protocol above and is not, and could not be, established by an assertion in a test file.",
+  "corpus": "The Task 16B corpus, unchanged. The point of a holdout over the same corpus is that only the questions change; if the corpus changed too, a difference in results could not be attributed to the questions.",
+  "queries": [
+    {
+      "id": "h01-pcb-contents",
+      "text": "What does the process control block contain?",
+      "relevant": ["os-notes#1"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#1 enumerates exactly what the process control block holds: the process identifier, program counter, register state, scheduling priority, page table pointer, accounting information and open file list. A learner asking what the PCB contains wants that list, and this is the only passage that gives it. Not label-derived: the passage states the contents in its own words without reusing the query's phrasing. Plausible alternative: distractor-notes#0 mentions scheduling priority, which the PCB also stores, but it is an index stub and names no other field, so it does not answer what the block contains."
+    },
+    {
+      "id": "h02-unimplementable-replacement",
+      "text": "Which page replacement algorithm can never actually be implemented, and why?",
+      "relevant": ["os-notes#4"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#4 states that optimal replacement has the lowest fault rate but is unimplementable, which is precisely the claim in the question, and contrasts it with least recently used, first in first out and random. No other passage names an unimplementable policy. Not label-derived: 'unimplementable' is the passage's word because it is the standard term for the property, not because it maximised overlap. Plausible alternative: os-notes#15 discusses optimal replacement, but as the trigger for Belady's anomaly rather than as the answer to why it cannot be built."
+    },
+    {
+      "id": "h03-process-state-count",
+      "text": "How many states does a process pass through in the five-state model?",
+      "relevant": ["os-notes#0"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#0 names all five states and describes the transitions between them, so it is the passage that answers a question about the five-state model. Not label-derived: the question is answerable only by a passage that enumerates the states. Plausible alternative: sysarch-notes#3 mentions that a process may be terminated, but it does not describe the state model."
+    },
+    {
+      "id": "h04-semaphore-purpose",
+      "text": "What is a counting semaphore used for?",
+      "relevant": ["os-notes#9"],
+      "category": "definition",
+      "adjudication": "os-notes#9 defines a counting semaphore as a synchronisation primitive holding a counter of available resource units, and describes the wait and signal operations that make it work. That is a direct answer to 'what is it for'. Not label-derived: the passage is the corpus's only definition of the term. Plausible alternative: os-notes#17 describes condition variables for producer and consumer, which is a different synchronisation mechanism and does not define a semaphore."
+    },
+    {
+      "id": "h05-address-translation",
+      "text": "How does the system turn a virtual address into a physical address?",
+      "relevant": ["os-notes#10"],
+      "category": "mechanism",
+      "adjudication": "os-notes#10 gives the mechanism step by step: split into page number and offset, look the page number up in the page table to get a frame number, concatenate frame number with offset. That procedure is the answer. Not label-derived: the query asks for a mechanism and only one passage describes one. Plausible alternative: sysarch-notes#3 discusses page table permissions on every load and store, which is about protection rather than translation, so it would be a misleading answer."
+    },
+    {
+      "id": "h06-fragmentation-paging",
+      "text": "What is fragmentation, and how does paging deal with it?",
+      "relevant": ["os-notes#7"],
+      "category": "mechanism",
+      "adjudication": "os-notes#7 defines both internal and external fragmentation and states that paging eliminates external fragmentation at the cost of internal fragmentation within a page frame, which is the full answer to both halves. Not label-derived: the question's two halves are the passage's two halves, and no other passage contrasts the two kinds. Plausible alternative: os-notes#10 covers virtual memory generally but says nothing about fragmentation."
+    },
+    {
+      "id": "h07-disk-scheduling-starvation",
+      "text": "Which disk scheduling policy can starve requests that are far from the read head?",
+      "relevant": ["os-notes#6"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#6 states that shortest seek time first reduces total movement but can starve distant requests. That is the specific claim the question asks for, and it is made only there. Not label-derived: the starvation property is stated as a property of SSTF in this passage and is not a lexical echo of the question. Plausible alternative: os-notes#11 and os-notes#14 also discuss starvation, but of processes under CPU scheduling, not of disk requests, so either would be a wrong answer."
+    },
+    {
+      "id": "h08-trap-definition",
+      "text": "What is a trap in a processor?",
+      "relevant": ["os-notes#12"],
+      "category": "definition",
+      "adjudication": "os-notes#12 defines a trap as a synchronous transfer of control to the kernel caused by the currently executing instruction, and contrasts it with an interrupt. It is the only definition of the term in the corpus. Not label-derived: the passage defines the concept rather than restating the question. Plausible alternative: os-notes#18 mentions a trap instruction inside the system call path, which uses the term without defining it."
+    },
+    {
+      "id": "h09-thread-definition",
+      "text": "What is a thread?",
+      "relevant": ["os-notes#13"],
+      "category": "definition",
+      "adjudication": "os-notes#13 defines a thread as the smallest unit of execution the scheduler dispatches, then explains what threads share and what they keep private. It is the only definition. Not label-derived: the question is a bare definition request and exactly one passage supplies a definition. Plausible alternative: ds-notes#1 describes breadth first search using a queue and a stack, which is unrelated to threads despite sharing queue and stack vocabulary."
+    },
+    {
+      "id": "h10-system-call-path",
+      "text": "How does a user program make a request to the kernel?",
+      "relevant": ["os-notes#18"],
+      "category": "mechanism",
+      "adjudication": "os-notes#18 describes the system call entry point and the wrapper that loads registers and executes a trap to reach the kernel. That is the request path. Not label-derived: the query deliberately avoids the phrase 'system call', so answering it requires recognising the mechanism by what it does rather than by matching its name. Plausible alternative: os-notes#12 describes the trap instruction itself, which is one step of this path rather than the whole of it."
+    },
+    {
+      "id": "h11-producer-consumer",
+      "text": "What is the producer consumer problem?",
+      "relevant": ["os-notes#17"],
+      "category": "definition",
+      "adjudication": "os-notes#17 names the problem, describes the fixed size shared buffer, and explains that each side waits on a condition variable rather than spinning. Not label-derived: the passage is the corpus's only treatment of the problem. Plausible alternative: db-notes#0 and distractor-notes#2 both discuss buffers, but a buffer pool is not this problem and neither passage names a producer or a consumer."
+    },
+    {
+      "id": "h12-cache-organisations",
+      "text": "What are the ways a cache can be organised, and how do they differ?",
+      "relevant": ["sysarch-notes#4"],
+      "category": "comparison",
+      "adjudication": "sysarch-notes#4 contrasts direct mapped against set associative organisation and write through against write back, which is exactly the comparison requested. Not label-derived: the query uses the word 'organised' while the passage says 'organised into sets of lines', so the match is conceptual. Plausible alternative: distractor-notes#2 uses cache, buffer, page and queue across different kernels, but it deliberately describes no organisation."
+    },
+    {
+      "id": "h13-belady-anomaly-definition",
+      "text": "What is Belady's anomaly?",
+      "relevant": ["os-notes#15"],
+      "category": "definition",
+      "adjudication": "os-notes#15 states the anomaly by name and defines it: adding frames to a memory system can increase the number of page faults. The passage is the only one that defines the term. Not label-derived: the question asks for a definition by name, and no other passage mentions it. Plausible alternative: distractor-notes#1 and distractor-notes#5 list many deadlock terms as index entries, illustrating the same shape of question, but neither names Belady's anomaly."
+    },
+    {
+      "id": "h14-wal-purpose",
+      "text": "What is a write ahead log for, and how does it help after a crash?",
+      "relevant": ["sysarch-notes#2"],
+      "category": "mechanism",
+      "adjudication": "sysarch-notes#2 explains that every modifying operation is recorded durably before being applied, and that a crash is recovered by replaying the log and undoing uncommitted work. Both halves of the question are answered there. Not label-derived: the query avoids the abbreviation WAL and asks by function. Plausible alternative: db-notes#0 writes a dirty page back to storage, which is a different durability mechanism with a different trigger."
+    },
+    {
+      "id": "h15-branch-predictor",
+      "text": "What is a branch predictor and what does a wrong guess cost?",
+      "relevant": ["sysarch-notes#1"],
+      "category": "definition",
+      "adjudication": "sysarch-notes#1 defines a branch predictor as guessing a conditional jump and speculatively fetching, and states that a misprediction costs the work already done on the wrong path. That is the definition plus the cost, which is both halves of the question. Not label-derived: the cost clause is the passage's own statement. Plausible alternative: none in the corpus describes speculation, so a wrong result here is unambiguous."
+    },
+    {
+      "id": "h16-dataset-splits",
+      "text": "Why is a dataset split into training, validation and test portions?",
+      "relevant": ["ml-notes#0"],
+      "category": "causal",
+      "adjudication": "ml-notes#0 defines all three splits and gives the reason: a model selected on the same data it is scored on reports a performance that does not generalise. The question asks why, and that sentence is the why. Not label-derived: the causal claim is the passage's own, and the query's phrasing does not quote it. Plausible alternative: ml-notes#1 discusses the gap between training and unseen data as the thing regularisation reduces, which touches the same concern without explaining the split."
+    },
+    {
+      "id": "h17-regularisation-purpose",
+      "text": "What does regularisation do and why is it needed?",
+      "relevant": ["ml-notes#1"],
+      "category": "causal",
+      "adjudication": "ml-notes#1 states that regularisation stops a model fitting noise in the training set, and describes the weight penalty and early stopping that achieve it. The why is the first sentence. Not label-derived: the question asks for purpose and reasoning, and the passage supplies both rather than echoing terms. Plausible alternative: ml-notes#0 also mentions training data, but it explains splits rather than constraining the model."
+    },
+    {
+      "id": "h18-learning-rate-too-large",
+      "text": "What happens to training if the learning rate is set too high?",
+      "relevant": ["ml-notes#2"],
+      "category": "causal",
+      "adjudication": "ml-notes#2 states that a step which is too large overshoots the minimum and the loss diverges, and contrasts it with a step too small. That is the answer to the causal question. Not label-derived: the divergence outcome is specific to this passage. Plausible alternative: none of the other passages discusses training dynamics."
+    },
+    {
+      "id": "h19-precision-recall-source",
+      "text": "Where do precision and recall come from when evaluating a classifier?",
+      "relevant": ["ml-notes#3"],
+      "category": "causal",
+      "adjudication": "ml-notes#3 explains that a confusion matrix tabulates true positives, false positives and false negatives, and that precision and recall are derived from those three counts rather than from accuracy. That derivation is the answer. Not label-derived: the query asks where the quantities come from and the passage explains the arithmetic. Plausible alternative: ml-notes#0 concerns held-out data, not metric computation."
+    },
+    {
+      "id": "h20-page-fault-steps",
+      "text": "What steps does the system take when a page fault occurs?",
+      "relevant": ["os-notes#5"],
+      "category": "mechanism",
+      "adjudication": "os-notes#5 enumerates the sequence: the fault trap is raised, the reference is validated, the free frame list or a replacement policy is consulted, a disk read is scheduled, the page table is updated and the instruction restarts. This is the only passage that gives the steps. Not label-derived: the query is a bare mechanism request. Plausible alternative: os-notes#10 covers address translation, which is what triggers a fault, but it does not describe the handling."
+    },
+    {
+      "id": "h21-deadlock-avoid-algorithm",
+      "text": "How can a deadlock be avoided, and which algorithm does the job?",
+      "relevant": ["os-notes#2", "os-notes#3"],
+      "category": "comparison",
+      "adjudication": "Two passages are genuinely required and the question has two halves. The 'which algorithm' half is os-notes#3, which names the banker's algorithm and describes granting a request only when the resulting state stays safe. The 'how can it be avoided' half is os-notes#2, which supplies the conditions an avoidance strategy must break, since avoidance works by refusing to create a state satisfying all four. Labeled both because a learner asking this needs both, not because either alone happened to rank well. Plausible alternatives: finance-notes#0 uses the same algorithm name for an unrelated retail heuristic and would answer the wrong question; distractor-notes#1 and distractor-notes#5 both list deadlock vocabulary without explaining avoidance."
+    },
+    {
+      "id": "h22-ageing-prevents-starvation",
+      "text": "How does ageing help a scheduler avoid starving a process?",
+      "relevant": ["os-notes#11"],
+      "category": "mechanism",
+      "adjudication": "os-notes#11 states that ageing periodically reduces a waiting process's effective priority so that it cannot wait forever, and that this applies when several processes share the top priority. That is the mechanism the question asks about. Not label-derived: the query names the technique, and the passage is the only one that defines it. Plausible alternative: os-notes#14 also prevents starvation, but by a periodic priority boost in a feedback queue rather than by ageing, so a learner asking specifically about ageing would be misled by it."
+    },
+    {
+      "id": "h23-process-memory-isolation",
+      "text": "How does the operating system stop one process reading another's memory?",
+      "relevant": ["sysarch-notes#3"],
+      "category": "mechanism",
+      "adjudication": "sysarch-notes#3 states that each process gets its own address space and that the memory management unit enforces the boundary on every load and store using page table permissions, and describes the resulting fault signal. That is the enforcement mechanism. Not label-derived: the query describes the effect and the passage supplies the mechanism. Plausible alternative: os-notes#10 explains mapping virtual addresses onto frames but says nothing about isolation between processes."
+    },
+    {
+      "id": "h24-convoy-effect",
+      "text": "What is the convoy effect in a non preemptive queue?",
+      "relevant": ["os-notes#8"],
+      "category": "definition",
+      "adjudication": "os-notes#8 describes the convoy effect directly: a long process at the head of a non preemptive first come first served queue delays every short process behind it, and contrasts that with round robin. It is the only passage that uses the term. Not label-derived: the query names the effect and the passage is its definition. Plausible alternative: distractor-notes#3 and distractor-notes#4 both discuss queues and time slices at length without ever describing the convoy effect, so a frequency-based ranking here would be a genuine error."
+    }
+  ]
+}

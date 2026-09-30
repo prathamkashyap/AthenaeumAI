@@ -1,0 +1,278 @@
+{
+  "name": "athenaeum-retrieval-holdout",
+  "version": "2.0.0",
+  "independentOf": ["retrieval-gold-set.json v1.0.0 (Task 10)", "retrieval-gold-set-v2.json v2.0.0 (Task 16B)", "retrieval-gold-set-holdout-v1.json v1.0.0 (Task 16C exploratory)"],
+  "description": "A second holdout of ordinary learner questions over the Task 16B corpus, produced by coverage-driven authoring: every answerable passage in the corpus was enumerated first, then covered by at least one question, with additional questions only where a passage is rich enough to support two distinct questions. The question set is therefore determined by what the corpus contains rather than by which cases any retriever won or lost.",
+  "independenceClaim": "THIS SET IS NOT INDEPENDENT. It was authored by the same process that authored the v2 benchmark, which has already seen those results. What this set can claim is narrower and is recorded in authoringMethod: the questions were produced by systematic coverage of the corpus rather than by selecting questions that were expected to separate the two retrievers. The stronger claim — that a question author had no access to prior rankings at all — is a provenance property of the process, is not established by anything in this file, and cannot be established by an automated test. Anyone needing a genuinely independent evaluation must commission questions from an author who has not seen v1, v2, or this file.",
+  "authoringMethod": "Step 1: enumerate the corpus and classify every chunk as substantive, filler-with-content, or constructed distractor. Step 2: write at least one question per substantive or filler passage, so coverage is fixed by the corpus before any question is considered. Step 3: adjudicate each label from the subject matter, naming the answering passage and the strongest plausible alternative. Step 4: freeze this file. Step 5: only then run either retriever. No ranking was inspected while authoring. No query was added, removed or relabelled after step 5. No corpus chunk was added, removed or modified. No retriever parameter was tuned.",
+  "corpus": "The Task 16B corpus, unchanged: 40 chunks, of which 30 are substantive, 4 carry real content despite being marked filler, and 6 are constructed distractors with no evidential value. The questions differ from v2; the corpus does not, so any difference in results is attributable to the question distribution.",
+  "labelSemantics": "A chunk is relevant when it is the passage a learner would consult to answer the question. Partial topical overlap is NOT sufficient. Where the subject matter genuinely requires two passages, both are labeled and the adjudication says why.",
+  "queries": [
+    {
+      "id": "r01-process-admission",
+      "text": "When does a process first enter the system, and what state is it in?",
+      "relevant": ["os-notes#0"],
+      "category": "explanation",
+      "adjudication": "os-notes#0 says a process is admitted into the New state when it is created, which is precisely the admission event and the state it lands in. Plausible alternative: os-notes#13 describes a thread being dispatched, which is a different unit of execution and does not describe process admission."
+    },
+    {
+      "id": "r02-process-blocking",
+      "text": "Why does a process move from running to waiting?",
+      "relevant": ["os-notes#0"],
+      "category": "causal",
+      "adjudication": "os-notes#0 states a process enters Waiting when it blocks on an event such as input output, which is the cause the question asks for. Plausible alternative: os-notes#9 describes a semaphore wait that blocks a process, but that is one specific reason to block rather than the general transition the question asks about."
+    },
+    {
+      "id": "r03-pcb-identifier",
+      "text": "Which fields of the process control block tell the kernel how to resume a process?",
+      "relevant": ["os-notes#1"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#1 lists the program counter and processor register state among the block's contents, and those are the fields that let a suspended process be resumed. Plausible alternative: os-notes#13 gives a thread its own program counter and register set, which is the per-thread equivalent rather than the PCB's contents."
+    },
+    {
+      "id": "r04-deadlock-single-instance",
+      "text": "What does the mutual exclusion condition on a deadlock require of a resource?",
+      "relevant": ["os-notes#2"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#2 defines mutual exclusion as a resource being held by at most one process, which is exactly the requirement asked about. Plausible alternative: distractor-notes#1 and distractor-notes#5 both list mutual exclusion as a bare term with no definition attached, so neither states the requirement."
+    },
+    {
+      "id": "r05-safe-state-grant",
+      "text": "How does a deadlock avoidance algorithm decide whether to approve a request?",
+      "relevant": ["os-notes#3"],
+      "category": "mechanism",
+      "adjudication": "os-notes#3 states the decision procedure: simulate every possible completion order after the grant and approve only if at least one safe sequence exists, otherwise defer. Plausible alternative: finance-notes#0 uses the same algorithm name for a retail reserve heuristic and would answer a different question entirely."
+    },
+    {
+      "id": "r06-page-replacement-cheap",
+      "text": "Which page replacement policy is cheapest to implement, and what does it give up?",
+      "relevant": ["os-notes#4"],
+      "category": "comparison",
+      "adjudication": "os-notes#4 says first in first out is cheap but ignores future use, which is both the cost and the concession. Plausible alternative: os-notes#15 mentions optimal replacement only in the context of Belady's anomaly and does not compare implementation cost."
+    },
+    {
+      "id": "r07-page-fault-restart",
+      "text": "What happens to the instruction that caused a page fault once the page has been loaded?",
+      "relevant": ["os-notes#5"],
+      "category": "mechanism",
+      "adjudication": "os-notes#5 ends its sequence with the instruction that caused the fault being restarted, which is exactly what the question asks. Plausible alternative: sysarch-notes#3 describes a protection violation being turned into a segmentation fault, which terminates the process rather than restarting the instruction."
+    },
+    {
+      "id": "r08-disk-elevator",
+      "text": "What is the elevator disk scheduling policy and why is it called that?",
+      "relevant": ["os-notes#6"],
+      "category": "explanation",
+      "adjudication": "os-notes#6 describes the scan or elevator policy as servicing requests in both directions while the head sweeps across the platter, and the sweeping motion is what the name refers to. Plausible alternative: none of the other passages describes a disk policy that changes direction."
+    },
+    {
+      "id": "r09-external-fragmentation",
+      "text": "Which memory management scheme suffers from external fragmentation?",
+      "relevant": ["os-notes#7"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#7 states that contiguous allocation suffers external fragmentation, and that paging eliminates it, so the passage both names the answer and rules out the alternative. Plausible alternative: distractor-notes#2 discusses buffers and pages across kernels but says nothing about fragmentation."
+    },
+    {
+      "id": "r10-timeslice-preemption",
+      "text": "What makes round robin preemptive?",
+      "relevant": ["os-notes#8"],
+      "category": "explanation",
+      "adjudication": "os-notes#8 says round robin preempts a process when its time slice expires and hands the processor to the next process in the ready queue, which is the preemption mechanism. Plausible alternative: distractor-notes#3 also says a process is preempted when its slice ends, but as social history rather than as a description of the policy."
+    },
+    {
+      "id": "r11-semaphore-wakeup",
+      "text": "How does a signal operation on a semaphore unblock a waiting process?",
+      "relevant": ["os-notes#9"],
+      "category": "mechanism",
+      "adjudication": "os-notes#9 states that signal increments the counter and wakes a blocked process. Plausible alternative: os-notes#17 describes a signal that wakes a consumer when the buffer is no longer empty, which is an analogous notification on a condition variable rather than on a semaphore."
+    },
+    {
+      "id": "r12-page-offset",
+      "text": "Which part of a virtual address is used to look up the page table, and which part is not?",
+      "relevant": ["os-notes#10"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#10 states the address is split into a page number and an offset, that the page number is looked up in the page table, and that the offset is concatenated onto the resulting frame number. The question asks which part is and is not used for the lookup, and the passage distinguishes them. Plausible alternative: sysarch-notes#3 refers to page table permissions on every access but does not describe the split."
+    },
+    {
+      "id": "r13-bankers-reserve",
+      "text": "In the retail banking sense, what does the banker's algorithm compare when it reviews a withdrawal request?",
+      "relevant": ["finance-notes#0"],
+      "category": "direct-factual",
+      "adjudication": "finance-notes#0 is the only passage describing the retail sense: the branch planner compares the pending withdrawal requests against the remaining reserve and defers what would fall below the minimum balance. Plausible alternative: os-notes#3 is the operating systems algorithm of the same name and would answer a different question."
+    },
+    {
+      "id": "r14-bufferpool-writeback",
+      "text": "When does a database engine write a dirty page back to storage?",
+      "relevant": ["db-notes#0"],
+      "category": "mechanism",
+      "adjudication": "db-notes#0 states the dirty page is written back before its frame is reused by another page, so the write-back trigger is frame reuse. Plausible alternative: sysarch-notes#4 distinguishes write through from write back caching, which is a cache policy rather than a buffer pool's eviction step."
+    },
+    {
+      "id": "r15-priority-ties",
+      "text": "What does a scheduler do when two ready processes have the same highest priority?",
+      "relevant": ["os-notes#11"],
+      "category": "explanation",
+      "adjudication": "os-notes#11 says that when several processes share the top priority the scheduler may use ageing, which reduces a waiting process's effective priority so it cannot wait forever. Plausible alternative: os-notes#8 and os-notes#14 describe what happens among equal processes under a time slice or a feedback queue, which is a different mechanism than the ageing the passage names."
+    },
+    {
+      "id": "r16-trap-cause",
+      "text": "What causes a trap to occur, as opposed to an interrupt?",
+      "relevant": ["os-notes#12"],
+      "category": "comparison",
+      "adjudication": "os-notes#12 states that a trap is caused by the instruction that is executing, whereas an interrupt is not, and that the saved state points back at that instruction. The question asks for the contrast, and the passage is the only one that draws it. Plausible alternative: os-notes#18 uses a trap instruction in the system call path without contrasting it with an interrupt."
+    },
+    {
+      "id": "r17-thread-shared-state",
+      "text": "What do threads of one process share with each other?",
+      "relevant": ["os-notes#13"],
+      "category": "direct-factual",
+      "adjudication": "os-notes#13 states that threads of one process share the address space, the open file table and the signal handlers of that process. Plausible alternative: os-notes#1 lists what a process control block stores, which is per-process state rather than what threads share."
+    },
+    {
+      "id": "r18-mlfq-demotion",
+      "text": "What happens to a process that keeps using its whole time slice in a feedback queue scheduler?",
+      "relevant": ["os-notes#14"],
+      "category": "mechanism",
+      "adjudication": "os-notes#14 states that a process which consumes its whole time slice is demoted to a lower queue, while one that blocks early stays at its level. Plausible alternative: os-notes#11's ageing reduces a waiting process's priority but is a separate mechanism in a separate scheduler."
+    },
+    {
+      "id": "r19-belady-optimal",
+      "text": "Which replacement policy is Belady's anomaly associated with, and what is surprising about it?",
+      "relevant": ["os-notes#15"],
+      "category": "explanation",
+      "adjudication": "os-notes#15 states the anomaly occurs for policies that evict the page whose next use is furthest in the future, such as optimal replacement, and that the surprising part is that adding frames can increase faults. Plausible alternative: os-notes#4 names optimal replacement as unimplementable but does not connect it to the anomaly."
+    },
+    {
+      "id": "r20-indexing-random-access",
+      "text": "Why does reading a large directory tree take a long time the first time?",
+      "relevant": ["os-notes#16"],
+      "category": "causal",
+      "adjudication": "os-notes#16 states the traversal is expensive on cold storage because each directory read is a separate random access, and that caching directory blocks and sorting entries help. Plausible alternative: sysarch-notes#4 describes a processor cache with locality, which is a different mechanism from directory-block caching on cold storage."
+    },
+    {
+      "id": "r21-producer-wait",
+      "text": "What does a producer thread do when the shared buffer is full?",
+      "relevant": ["os-notes#17"],
+      "category": "mechanism",
+      "adjudication": "os-notes#17 states each side must wait on the appropriate condition variable when the buffer is in the wrong state rather than spinning, and the full case is the producer's condition. Plausible alternative: distractor-notes#2 discusses buffers across kernels but describes no producer consumer protocol."
+    },
+    {
+      "id": "r22-syscall-arguments",
+      "text": "How does a library wrapper get its arguments to the kernel during a system call?",
+      "relevant": ["os-notes#18"],
+      "category": "mechanism",
+      "adjudication": "os-notes#18 states the wrapper places the service number and arguments in registers and executes a trap instruction. Plausible alternative: os-notes#12 describes the trap itself in general terms but not the argument passing."
+    },
+    {
+      "id": "r23-pipeline-stages",
+      "text": "Which stages does a classic instruction pipeline overlap?",
+      "relevant": ["sysarch-notes#0"],
+      "category": "direct-factual",
+      "adjudication": "sysarch-notes#0 names the fetch, decode, execute, memory and write back stages and states that a pipeline overlaps them across successive instructions. Plausible alternative: sysarch-notes#1 concerns the branch predictor's effect on a pipeline but does not enumerate the stages."
+    },
+    {
+      "id": "r24-branch-mispredict-cost",
+      "text": "Why is a mispredicted branch expensive in a pipelined processor?",
+      "relevant": ["sysarch-notes#1"],
+      "category": "causal",
+      "adjudication": "sysarch-notes#1 states a misprediction costs the work already done on the wrong path and that the cost grows with the depth of the speculation. Plausible alternative: sysarch-notes#0 explains that a data dependency stalls the pipeline, which is a different cause with a different remedy."
+    },
+    {
+      "id": "r25-wal-serialisation",
+      "text": "How does a write ahead log avoid having to lock the whole database?",
+      "relevant": ["sysarch-notes#2"],
+      "category": "mechanism",
+      "adjudication": "sysarch-notes#2 states the log is the single serialisation point for concurrent transactions, which is what lets a database guarantee atomicity without locking the whole database. Plausible alternative: db-notes#0 has an eviction policy and a write back but no lock protocol, so it would not answer the question."
+    },
+    {
+      "id": "r26-page-permission-fault",
+      "text": "What happens when a process touches memory it is not allowed to access?",
+      "relevant": ["sysarch-notes#3"],
+      "category": "mechanism",
+      "adjudication": "sysarch-notes#3 states a protection violation is delivered to the offending process as a fault signal, which the kernel may turn into a segmentation fault and terminate the process. Plausible alternative: os-notes#5 describes the handling of an ordinary page fault, which resolves the reference rather than killing the process."
+    },
+    {
+      "id": "r27-cache-locality",
+      "text": "What property of a program's memory access does a cache exploit?",
+      "relevant": ["sysarch-notes#4"],
+      "category": "explanation",
+      "adjudication": "sysarch-notes#4 states a cache sits between processor and memory to exploit temporal and spatial locality. Plausible alternative: os-notes#4 discusses temporal locality in choosing what to evict, which is a replacement policy rather than the reason a cache exists."
+    },
+    {
+      "id": "r28-writeback-policy",
+      "text": "Under a write back cache, when does the processor update main memory?",
+      "relevant": ["sysarch-notes#4"],
+      "category": "mechanism",
+      "adjudication": "sysarch-notes#4 states a write back cache updates memory only when the line is evicted, in contrast to a write through cache which updates on every store. Plausible alternative: db-notes#0 writes a dirty page back before reusing a frame, which is a buffer pool's write-back rule rather than a cache's."
+    },
+    {
+      "id": "r29-validation-role",
+      "text": "What is the validation set for in machine learning?",
+      "relevant": ["ml-notes#0"],
+      "category": "explanation",
+      "adjudication": "ml-notes#0 states the validation set is held out from training and used only to choose hyper parameters, which is its role. Plausible alternative: ml-notes#1 mentions validation error in the context of early stopping, which is a use of it but not the definition of what it is for."
+    },
+    {
+      "id": "r30-early-stopping",
+      "text": "How does early stopping count as a form of regularisation?",
+      "relevant": ["ml-notes#1"],
+      "category": "causal",
+      "adjudication": "ml-notes#1 lists early stopping as one of the two techniques it describes, halting training once validation error stops improving, and explains that both trade training error for a smaller gap to unseen data. Plausible alternative: ml-notes#2 describes changing the learning rate over training, which is a schedule rather than a regulariser."
+    },
+    {
+      "id": "r31-learning-rate-small",
+      "text": "What is the consequence of setting the learning rate too small?",
+      "relevant": ["ml-notes#2"],
+      "category": "causal",
+      "adjudication": "ml-notes#2 states too small a step makes convergence impractically slow, which is the consequence asked about. Plausible alternative: none of the other passages discusses the step size or convergence speed."
+    },
+    {
+      "id": "r32-confusion-cells",
+      "text": "Which cells of a confusion matrix give the false positives?",
+      "relevant": ["ml-notes#3"],
+      "category": "direct-factual",
+      "adjudication": "ml-notes#3 states the off diagonal cells give the false positives and false negatives while the correct-class cell gives the true positives, so the off-diagonal is the answer. Plausible alternative: no other passage presents a matrix of counts."
+    },
+    {
+      "id": "r33-tcp-congestion",
+      "text": "How does TCP stop a sender from overwhelming a receiver?",
+      "relevant": ["net-notes#0"],
+      "category": "mechanism",
+      "adjudication": "net-notes#0 states TCP uses a sliding congestion window for that purpose, alongside sequence numbers, acknowledgements and retransmission timers. Plausible alternative: os-notes#6 discusses starvation in disk scheduling, which shares the vocabulary of flow control but not the mechanism."
+    },
+    {
+      "id": "r34-dns-ttl",
+      "text": "Why does a name server attach a time to live to a resolved address?",
+      "relevant": ["net-notes#1"],
+      "category": "causal",
+      "adjudication": "net-notes#1 states the answer is cached with a time to live, so the time bounds how long the cached answer is used before resolution is repeated. Plausible alternative: no other passage discusses caching of a resolved name."
+    },
+    {
+      "id": "r35-hash-collisions",
+      "text": "How does a hash table handle two keys that land in the same bucket?",
+      "relevant": ["ds-notes#0"],
+      "category": "mechanism",
+      "adjudication": "ds-notes#0 states collisions are resolved by chaining entries in a list or by probing an alternative open address. Plausible alternative: no other passage describes bucket collisions."
+    },
+    {
+      "id": "r36-bfs-dfs-difference",
+      "text": "What distinguishes breadth first search from depth first search?",
+      "relevant": ["ds-notes#1"],
+      "category": "comparison",
+      "adjudication": "ds-notes#1 states breadth first explores level by level using a queue while depth first follows a single branch using a stack, and that both visit every reachable vertex. Plausible alternative: os-notes#6 describes an elevator policy that services requests in both directions, which resembles level-by-level traversal of a request queue but is a disk policy."
+    },
+    {
+      "id": "r37-trap-vs-systemcall",
+      "text": "How is a trap used in the system call path?",
+      "relevant": ["os-notes#18", "os-notes#12"],
+      "category": "comparison",
+      "adjudication": "Two passages are genuinely needed. os-notes#18 shows the role: the library wrapper executes a trap instruction to transfer control to the kernel. os-notes#12 explains what a trap is and that it is caused by the executing instruction, which is what makes the transfer synchronous and returnable to the caller. Either alone is a partial answer, so both are labeled. Plausible alternative: none, since no other passage uses the term."
+    },
+    {
+      "id": "r38-fragmentation-vs-cache",
+      "text": "Why is internal fragmentation unavoidable in a paged system?",
+      "relevant": ["os-notes#7"],
+      "category": "causal",
+      "adjudication": "os-notes#7 states paging eliminates external fragmentation at the cost of internal fragmentation within each fixed size page frame, and the cause is the fixed size of the frame. Plausible alternative: sysarch-notes#4 discusses a fixed size cache line and its internal fragmentation is implied but not stated as unavoidable, so the passage that states it directly is os-notes#7."
+    }
+  ]
+}

@@ -1,0 +1,474 @@
+{
+  "name": "athenaeum-os-retrieval-gold-set",
+  "version": "2.0.0",
+  "supersedes": "retrieval-gold-set.json v1.0.0 (Task 10), which remains frozen and is still the reference baseline.",
+  "description": "Adjudicated retrieval judgments, version 2. Purpose: create enough HARD cases that two lexical retrievers can be told apart. v1 achieved its purpose by exposing one retriever's ranking weakness, but 9 of its 12 queries were saturated — both candidate retrievers ranked the answer first — so aggregate deltas were diluted roughly four to one and no strategy could separate. v2 keeps all 12 v1 queries and labels byte-identical, and adds cases where a good lexical ranker and a poor one are expected to disagree for principled reasons: rare vs common terms, document length, term-frequency traps, cross-material collision, and questions with no lexical answer at all.",
+  "labelSemantics": "A chunk is relevant to a query when it is the passage a reader would consult to answer the question. Partial topical overlap is NOT sufficient. Distractors are deliberately lexically similar to at least one query so the retriever's discrimination can be observed.",
+  "adjudicationProtocol": "Every relevance label below was decided by reading the subject matter and asking which passage a domain-literate reader would consult. No label was derived from, adjusted toward, or removed on the basis of what either retriever returned, and no retriever output was consulted before adjudicating. New chunks were written to create a specific, stated retrieval difficulty, not to favour any scorer: where a new chunk makes a query hard, the note says which difficulty it creates. Queries were authored from the subject matter first, and the v2 measurement was only run afterwards.",
+  "unanswerableSemantics": "Queries with answerable=false assert that NO chunk in this corpus answers them. They exist to test whether a retriever signals absence, and are scored separately: they are excluded from HitRate, Precision and MRR, and instead contribute to the 'no false positive' check. This is a property of the evaluation harness, not of production: searchMaterialChunks still returns top-N regardless of score, because that behavior is unchanged and measured separately.",
+  "corpus": [
+    {
+      "key": "os-notes#0",
+      "materialKey": "os-notes",
+      "chunkIndex": 0,
+      "text": "The five-state process model describes the life cycle of a process as New, Ready, Running, Waiting and Terminated. A process is admitted into the New state when it is created, moves to Ready when the scheduler dispatches it, enters Running when a processor is assigned, enters Waiting when it blocks on an event such as input output, and finally reaches Terminated when it completes or is aborted by the operating system."
+    },
+    {
+      "key": "os-notes#1",
+      "materialKey": "os-notes",
+      "chunkIndex": 1,
+      "text": "The process control block is the kernel data structure that stores everything the operating system needs in order to manage a process. It holds the process identifier, the program counter and processor register state, the scheduling priority, the memory management page table pointer, the accounting information and the list of open files and sockets owned by the process."
+    },
+    {
+      "key": "os-notes#2",
+      "materialKey": "os-notes",
+      "chunkIndex": 2,
+      "text": "A deadlock requires four necessary conditions to hold simultaneously: mutual exclusion, in which a resource is held by at most one process; hold and wait, in which a process holds a resource while waiting for further resources; the absence of preemption, in which a granted resource cannot be forcibly removed; and circular wait, in which a cycle of waiting processes exists."
+    },
+    {
+      "key": "os-notes#3",
+      "materialKey": "os-notes",
+      "chunkIndex": 3,
+      "text": "The banker's algorithm is a deadlock avoidance technique that grants a resource request only when the resulting allocation state remains safe. The algorithm simulates every possible completion order after the grant and proceeds only if at least one safe sequence exists, otherwise the request is deferred until later."
+    },
+    {
+      "key": "os-notes#4",
+      "materialKey": "os-notes",
+      "chunkIndex": 4,
+      "text": "Page replacement algorithms decide which resident page to evict when a page fault occurs and no free frame remains. Least recently used tracks temporal locality and performs well on most workloads, first in first out is cheap but ignores future use, optimal replacement has the lowest fault rate but is unimplementable, and random provides no locality at all."
+    },
+    {
+      "key": "os-notes#5",
+      "materialKey": "os-notes",
+      "chunkIndex": 5,
+      "text": "Handling a page fault is a fixed sequence of hardware and operating system steps. The memory management unit raises the fault trap, the operating system validates the reference, consults the free frame list or a page replacement policy, schedules the required disk read to bring the page into a frame, updates the page table, and finally restarts the instruction that caused the fault."
+    },
+    {
+      "key": "os-notes#6",
+      "materialKey": "os-notes",
+      "chunkIndex": 6,
+      "text": "Disk scheduling determines the order in which queued block requests are served. First come first served is fair but suffers a long seek head movement, shortest seek time first reduces total movement but can starve distant requests, and the scan or elevator policy services requests in both directions while the head sweeps across the platter."
+    },
+    {
+      "key": "os-notes#7",
+      "materialKey": "os-notes",
+      "chunkIndex": 7,
+      "text": "Memory allocation schemes trade internal and external fragmentation against one another. Contiguous allocation is simple and supports register addressing but suffers external fragmentation, fixed partitions waste memory internally, and paging eliminates external fragmentation at the cost of internal fragmentation within each fixed size page frame."
+    },
+    {
+      "key": "os-notes#8",
+      "materialKey": "os-notes",
+      "chunkIndex": 8,
+      "text": "Round robin preemptive scheduling gives each ready process a fixed time slice on the processor and preempts it when the slice expires, handing the processor to the next process in the ready queue. Contrast this with non preemptive first come first served, where a long process at the head of the queue produces the convoy effect and delays every short process behind it."
+    },
+    {
+      "key": "os-notes#9",
+      "materialKey": "os-notes",
+      "chunkIndex": 9,
+      "text": "A counting semaphore is a synchronisation primitive that holds a counter representing the number of available resource units. A process that needs the resource performs a wait operation that decrements the counter, blocking while the counter is zero, and releases it with a signal operation that increments the counter and wakes a blocked process, thereby coordinating access to a shared resource."
+    },
+    {
+      "key": "os-notes#10",
+      "materialKey": "os-notes",
+      "chunkIndex": 10,
+      "text": "Virtual memory allows a process to address more memory than it physically owns by mapping virtual addresses onto frames. Address translation splits a virtual address into a page number and an offset, looks the page number up in the page table to obtain a frame number, and concatenates the frame number with the offset to form the physical address."
+    },
+    {
+      "key": "finance-notes#0",
+      "materialKey": "finance-notes",
+      "chunkIndex": 0,
+      "text": "In retail banking, a banker's algorithm is sometimes used informally when describing a cash management heuristic for a branch that keeps a running reserve allocation. The branch planner reviews the pending withdrawal requests and the remaining reserve, allocates a safe portion of the reserve to each request, and defers the remainder when the allocation would fall below the required minimum balance."
+    },
+    {
+      "key": "db-notes#0",
+      "materialKey": "db-notes",
+      "chunkIndex": 0,
+      "text": "Buffer allocation in a database engine decides which pages may remain resident in memory. A buffer pool holds a fixed number of frames, pages are allocated into free frames on first reference, an eviction policy chooses a victim page when no frame is free, and the dirty page is written back to storage before its frame is reused by another page."
+    },
+    {
+      "key": "net-notes#0",
+      "materialKey": "net-notes",
+      "chunkIndex": 0,
+      "text": "Filler distractor. TCP provides a reliable ordered byte stream over an unreliable packet network, using sequence numbers, acknowledgements, retransmission timers and a sliding congestion window to keep the sender from overwhelming the receiver."
+    },
+    {
+      "key": "net-notes#1",
+      "materialKey": "net-notes",
+      "chunkIndex": 1,
+      "text": "Filler distractor. The domain name system maps human readable host names to address records, and recursive resolution walks the hierarchy from the root servers down to an authoritative name server before caching the answer with a time to live."
+    },
+    {
+      "key": "ds-notes#0",
+      "materialKey": "ds-notes",
+      "chunkIndex": 0,
+      "text": "Filler distractor. A hash table stores key value pairs in buckets chosen by a hash function, keeping the expected constant time lookup while collisions are resolved by chaining entries in a list or by probing an alternative open address."
+    },
+    {
+      "key": "ds-notes#1",
+      "materialKey": "ds-notes",
+      "chunkIndex": 1,
+      "text": "Filler distractor. A breadth first search explores a graph level by level using a queue, whereas depth first search follows a single branch as far as it can using a stack, and both visit every vertex reachable from the start."
+    },
+
+    {
+      "key": "os-notes#11",
+      "materialKey": "os-notes",
+      "chunkIndex": 11,
+      "text": "Priority scheduling assigns each process a numeric priority and always dispatches the highest priority process that is ready to run. When several processes share the top priority the scheduler may use ageing, which periodically reduces a waiting process's effective priority so that it cannot wait forever."
+    },
+    {
+      "key": "os-notes#12",
+      "materialKey": "os-notes",
+      "chunkIndex": 12,
+      "text": "A trap synchronously transfers control to the kernel when a processor instruction detects a condition such as a divide error, a missing address translation or a protection violation. Unlike an interrupt, a trap is caused by the instruction that is executing and the saved processor state always points back at that instruction."
+    },
+    {
+      "key": "os-notes#13",
+      "materialKey": "os-notes",
+      "chunkIndex": 13,
+      "text": "A thread is the smallest unit of execution that the processor scheduler dispatches. Threads of one process share the address space, the open file table and the signal handlers of that process, but each thread keeps its own program counter, register set and stack, so a fault in one thread need not destroy the whole process."
+    },
+    {
+      "key": "os-notes#14",
+      "materialKey": "os-notes",
+      "chunkIndex": 14,
+      "text": "Multilevel feedback queue scheduling keeps several ready queues at different priority levels. A process that consumes its whole time slice is demoted to a lower queue, while a process that blocks early stays at its current level, and a periodic priority boost returns long waiting processes to the top queue so that no process starves."
+    },
+    {
+      "key": "os-notes#15",
+      "materialKey": "os-notes",
+      "chunkIndex": 15,
+      "text": "Belady's anomaly is the observation that adding frames to a memory system can increase the number of page faults a demand paging system suffers. It occurs for replacement policies that evict the page whose next use is furthest in the future, such as optimal replacement, and it shows that the fault rate is not a monotone function of the memory available."
+    },
+    {
+      "key": "os-notes#16",
+      "materialKey": "os-notes",
+      "chunkIndex": 16,
+      "text": "Indexing a file system tree means walking every directory and inode, reading each node's block list, and recording where the blocks live so that a later lookup can seek directly. The traversal is expensive on cold storage because each directory read is a separate random access, so a large tree benefits from caching directory blocks and from sorting entries to make the access pattern sequential."
+    },
+    {
+      "key": "os-notes#17",
+      "materialKey": "os-notes",
+      "chunkIndex": 17,
+      "text": "The producer consumer problem describes a fixed size buffer shared by two classes of thread. A producer appends an item to the buffer and signals that the buffer is not empty, while a consumer removes an item and signals that the buffer is not full, and each side must wait on the appropriate condition variable when the buffer is in the wrong state rather than spinning."
+    },
+    {
+      "key": "os-notes#18",
+      "materialKey": "os-notes",
+      "chunkIndex": 18,
+      "text": "A system call is the controlled entry point through which a user program asks the kernel for a service that only the kernel can provide, such as opening a file or mapping memory. The library wrapper places the requested service number and arguments in registers, executes a trap instruction to transfer control to the kernel, and returns the result to the caller on completion."
+    },
+
+    {
+      "key": "sysarch-notes#0",
+      "materialKey": "sysarch-notes",
+      "chunkIndex": 0,
+      "text": "A superscalar processor issues several independent instructions per clock cycle from a single instruction stream, and a pipeline overlaps the fetch, decode, execute, memory and write back stages of successive instructions. To keep the stages busy the compiler reorders independent instructions, because a data dependency between two instructions stalls the pipeline regardless of how much execution width the processor has."
+    },
+    {
+      "key": "sysarch-notes#1",
+      "materialKey": "sysarch-notes",
+      "chunkIndex": 1,
+      "text": "A branch predictor guesses the outcome of a conditional jump and speculatively fetches along the guessed path so that the pipeline is not flushed. A mispredicted branch costs the work already done on the wrong path, so processors use a branch target buffer and a history based predictor, and the cost grows with the depth of the speculation."
+    },
+    {
+      "key": "sysarch-notes#2",
+      "materialKey": "sysarch-notes",
+      "chunkIndex": 2,
+      "text": "A write ahead log records every modifying operation in a durable sequential log before the change is applied to the main data structures, so that a crash can be recovered by replaying the log and undoing operations that were never committed. The log is the single serialisation point for concurrent transactions, which is what lets a database guarantee atomicity without locking the whole database."
+    },
+    {
+      "key": "sysarch-notes#3",
+      "materialKey": "sysarch-notes",
+      "chunkIndex": 3,
+      "text": "Virtual memory isolation gives each process its own address space so that one process cannot read or write another's memory, and the memory management unit enforces the boundary on every load and store using the page table permissions. A page fault raised by a protection violation is delivered to the offending process as a fault signal, which the kernel may turn into a segmentation fault and terminate the process."
+    },
+    {
+      "key": "sysarch-notes#4",
+      "materialKey": "sysarch-notes",
+      "chunkIndex": 4,
+      "text": "A cache sits between the processor and main memory to exploit temporal and spatial locality, and is organised into sets of lines indexed over part of the address. A direct mapped cache holds one possible line per set, a set associative cache holds several and checks them in parallel, and a write through cache updates memory on every store whereas a write back cache updates memory only when the line is evicted."
+    },
+    {
+      "key": "ml-notes#0",
+      "materialKey": "ml-notes",
+      "chunkIndex": 0,
+      "text": "A training set is a fixed collection of labelled examples that the optimiser repeatedly reads while it adjusts the model parameters. A validation set is held out from training and used only to choose hyper parameters, and a test set is held out from both and touched once at the end, because a model selected on the same data it is scored on reports a performance that does not generalise."
+    },
+    {
+      "key": "ml-notes#1",
+      "materialKey": "ml-notes",
+      "chunkIndex": 1,
+      "text": "Regularisation constrains a model so that it does not fit the noise in the training set. Adding a penalty on the magnitude of the weights shrinks them toward zero, and early stopping halts training once the validation error stops improving, both of which trade a small increase in training error for a reduction in the gap between training and unseen data."
+    },
+    {
+      "key": "ml-notes#2",
+      "materialKey": "ml-notes",
+      "chunkIndex": 2,
+      "text": "The learning rate sets how far the parameters move in response to the gradient of the loss at each step. Too large a step overshoots the minimum and the loss diverges, too small a step makes convergence impractically slow, and schedules such as decay or momentum change the rate over training to reach a good solution faster."
+    },
+    {
+      "key": "ml-notes#3",
+      "materialKey": "ml-notes",
+      "chunkIndex": 3,
+      "text": "A confusion matrix tabulates how often a classifier assigns each class label, with the true class on one axis and the predicted class on the other. The cell for the correct class gives the true positives, the off diagonal cells give the false positives and false negatives, and precision and recall are derived from those three counts rather than from the accuracy alone."
+    },
+
+    {
+      "key": "distractor-notes#0",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 0,
+      "text": "Scheduling priority. Scheduling priority. Scheduling priority. Index entry: see scheduling priority, priority scheduling, priority queue, priority level, priority boost, priority inversion, static priority, dynamic priority, scheduling policy priority ordering, priority inversion detection, priority based scheduler configuration, priority assignment, priority inheritance protocol, priority driven admission control, and priority aware workload placement."
+    },
+    {
+      "key": "distractor-notes#1",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 1,
+      "text": "Deadlock. See deadlock conditions, deadlock detection, deadlock avoidance, deadlock prevention, deadlock resolution, deadlock cycle, resource allocation graph, Coffman conditions, hold and wait, circular wait, mutual exclusion, preemption, starvation versus deadlock, livelock, and the difference between them."
+    },
+    {
+      "key": "distractor-notes#2",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 2,
+      "text": "Portability of operating system abstractions across vendors. The buffer pool of a relational engine, the buffer cache of a file system, the page cache of a kernel, the cache of a processor and the process scheduling queue of a general purpose kernel are all called a buffer, a cache or a queue in different manuals, and the same word names different objects in each. Reading a manual for the wrong kernel therefore produces confident answers about the wrong mechanism."
+    },
+    {
+      "key": "distractor-notes#3",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 3,
+      "text": "Time sharing came to universities in the nineteen sixties, when a single processor had to serve a roomful of students who each believed the machine belonged to them. The economics mattered as much as the engineering: a processor that sat idle while one user composed a punch card was expensive, and a room in which a hundred users waited for a machine that was busy was worse. The compromise was to give each user a time slice on the processor and to preempt a running process when its slice ended, so that the queue of waiting processes moved and everyone got a turn. Advertisements for the arrangement led to the first time sharing operating systems."
+    },
+    {
+      "key": "distractor-notes#4",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 4,
+      "text": "The etymology of the term operating system runs from nineteenth century punch card tabulating machinery through the twentieth century batch job office, where a computer operator submitted a deck of punched cards, the processor read the jobs in strict submission order, and the operator queued each job behind the last. Commercial systems of that era offered no processor sharing, no time slice and no preemptive queue, so a single long job occupied the machine until it finished and every other job waited its turn. Operators learned to submit short jobs first, and the phrase operating system entered professional vocabulary long before the concept it now names."
+    },
+    {
+      "key": "distractor-notes#5",
+      "materialKey": "distractor-notes",
+      "chunkIndex": 5,
+      "text": "Deadlock. Mutual exclusion. Hold and wait. No preemption. Circular wait. Exam revision sheet, week six. See also Coffman conditions, resource allocation graph, wait for graph, single instance, consumable resource, recoverable state, and starvation. Question 1: name the four conditions. Question 2: define each in one line. Question 3: state which condition a preemptive kernel removes."
+    }
+  ],
+  "queries": [
+    {
+      "id": "q01-process-states",
+      "text": "What are the five states of a process?",
+      "relevant": ["os-notes#0"],
+      "category": "exact-terminology",
+      "note": "Exact terminology match on a distinctive phrase."
+    },
+    {
+      "id": "q02-process-control-block",
+      "text": "What information does the process control block store?",
+      "relevant": ["os-notes#1"],
+      "category": "exact-terminology"
+    },
+    {
+      "id": "q03-deadlock-conditions",
+      "text": "What are the necessary conditions for a deadlock?",
+      "relevant": ["os-notes#2"],
+      "category": "exact-terminology",
+      "note": "The term conditions is shared by a banker's algorithm chunk, so this discriminates."
+    },
+    {
+      "id": "q04-page-replacement",
+      "text": "Which page replacement algorithm performs best and why?",
+      "relevant": ["os-notes#4"],
+      "category": "exact-terminology",
+      "note": "Shares the words algorithm and page with other chunks."
+    },
+    {
+      "id": "q05-page-fault-handling",
+      "text": "What steps does the operating system take to handle a page fault?",
+      "relevant": ["os-notes#5"],
+      "category": "exact-terminology"
+    },
+    {
+      "id": "q06-late-corpus-chunk",
+      "text": "How does a counting semaphore coordinate access to a shared resource?",
+      "relevant": ["os-notes#9"],
+      "category": "relevant-chunk-late-in-corpus",
+      "note": "The target sits near the end of the corpus, so an early-return or prefix-only bug would miss it."
+    },
+    {
+      "id": "q07-multiple-relevant",
+      "text": "What causes a deadlock, and how can it be avoided?",
+      "relevant": ["os-notes#2", "os-notes#3"],
+      "category": "multiple-relevant",
+      "note": "Two chunks are genuinely required to answer: the conditions and the avoidance technique. Makes Precision@5 and HitRate@k non-trivial."
+    },
+    {
+      "id": "q08-safe-allocation-distractor",
+      "text": "How does the banker's algorithm guarantee that a resource allocation state is safe?",
+      "relevant": ["os-notes#3"],
+      "category": "lexical-overlap-distractor",
+      "note": "finance-notes#0 uses the same algorithm name, reserve and allocation vocabulary but is about a retail branch. The labels say only the operating systems chunk answers the question."
+    },
+    {
+      "id": "q09-time-slice-paraphrase",
+      "text": "How do the jobs take turns on the machine when their allotted interval runs out?",
+      "relevant": ["os-notes#8"],
+      "category": "paraphrase-expected-to-struggle",
+      "note": "A paraphrase with almost no shared vocabulary with the round robin chunk: it says jobs, machine, interval instead of process, processor, time slice. A purely lexical retriever is expected to fail or rank this poorly. This case exists to make that limitation visible, not to be fixed."
+    },
+    {
+      "id": "q10-memory-pressure-paraphrase",
+      "text": "What happens when the program needs more working memory than the machine physically has?",
+      "relevant": ["os-notes#10"],
+      "category": "paraphrase-expected-to-struggle",
+      "note": "Describes virtual memory without using the term. Shares only the word memory with the paging and allocation chunks."
+    },
+    {
+      "id": "q11-buffer-pool-distractor",
+      "text": "How does a database buffer pool allocate frames and evict a page?",
+      "relevant": ["db-notes#0"],
+      "category": "cross-material",
+      "note": "The answer lives in a different material, so retrieval must span the user's whole corpus and must respect the material filter when one is supplied."
+    },
+    {
+      "id": "q12-ambiguous-allocation",
+      "text": "How does memory allocation compare between contiguous allocation and paging?",
+      "relevant": ["os-notes#7"],
+      "category": "exact-terminology",
+      "note": "Shares the words allocation and paging with several other chunks, but only one answers the fragmentation comparison."
+    },
+
+    {
+      "id": "q13-priority-scheduling-mechanism",
+      "text": "How does the operating system decide which ready process runs on the processor first?",
+      "relevant": ["os-notes#11"],
+      "category": "synonym-substitution",
+      "adjudication": "os-notes#11 is the passage describing how the scheduler chooses among ready processes, by numeric priority. The query never says 'priority' or 'scheduling policy' — it says 'decide which ready process runs first' — so answering it requires recognising the concept, not matching a term. Intended distractors: os-notes#0 describes states without saying how the choice is made, os-notes#8 and os-notes#14 describe specific policies that are alternative answers to a narrower question."
+    },
+    {
+      "id": "q14-trap-vs-interrupt",
+      "text": "What is the difference between a trap and an interrupt?",
+      "relevant": ["os-notes#12"],
+      "category": "synonym-substitution",
+      "adjudication": "os-notes#12 is the only passage that contrasts a trap with an interrupt. A query asking for a difference between two named things can only be answered by the passage that discusses both. Intended distractor: none competes lexically, so this query is near-saturated by construction and exists as a control."
+    },
+    {
+      "id": "q15-thread-minimal-unit",
+      "text": "What is shared and what is private between two threads of the same process?",
+      "relevant": ["os-notes#13"],
+      "category": "multi-hop-wording",
+      "adjudication": "os-notes#13 is the passage that states exactly which state a thread shares with its process and which it keeps private, so it is the answer to a question about the boundary between shared and per-thread state. The query never uses the word 'thread' as a keyword anchor beyond the first noun, and phrases the question as a partition. Intended distractors: os-notes#1 describes what the kernel stores per process, which is the per-process side only, and os-notes#17 describes coordination between threads rather than the shared/private boundary."
+    },
+    {
+      "id": "q16-mlfq-starvation-avoidance",
+      "text": "How does a scheduler stop a low priority process from waiting forever?",
+      "relevant": ["os-notes#14", "os-notes#11"],
+      "category": "multiple-relevant",
+      "adjudication": "Two passages are genuinely required. os-notes#14 describes the periodic priority boost in a feedback queue scheduler, which is one concrete mechanism. os-notes#11 describes ageing as a priority reduction applied to a waiting process, which is the other. Either alone is a partial answer to 'how does a scheduler stop starvation'. Intended distractor: os-notes#6 uses 'starve' but about disk seek requests, a different resource entirely."
+    },
+    {
+      "id": "q17-belady-anomaly",
+      "text": "Can adding memory increase the number of page faults?",
+      "relevant": ["os-notes#15"],
+      "category": "rare-term-vs-common",
+      "adjudication": "os-notes#15 is the only passage stating that a page fault count can rise when frames are added, and it names the effect. The query is phrased as a yes/no question about page faults, using only the common terms memory, page and fault, none of which discriminate on their own — the discrimination is in the relationship between adding and increasing, which is exactly what a rare-term argument must capture. Intended distractors: os-notes#4 and os-notes#5 discuss page replacement and page faults extensively but neither says the fault count can rise with more memory, so lexical overlap alone is not sufficient."
+    },
+    {
+      "id": "q18-priority-frequency-trap",
+      "text": "How is scheduling priority used to choose a process, and what stops a low priority process from waiting forever?",
+      "relevant": ["os-notes#11"],
+      "category": "term-frequency-distractor",
+      "adjudication": "os-notes#11 answers the mechanism half of this question, and the ageing sentence in it answers the starvation half as well, so this passage is labelled alone. distractor-notes#0 repeats the phrase 'scheduling priority' seven times and is lexically maximal for the first clause while containing no mechanism at all, so a retriever rewarding raw frequency prefers the glossary page. distractor-notes#5 is a similar trap for the starvation clause, repeating priority without explanation. This is the clearest frequency test in the set and it is authored to punish frequency-driven ranking specifically."
+    },
+    {
+      "id": "q19-long-document-penalty",
+      "text": "Which scheduling policy gives every ready process a fixed interval on the processor, and what happens to a long process at the head of the queue?",
+      "relevant": ["os-notes#8"],
+      "category": "long-document-penalty",
+      "adjudication": "os-notes#8 is the only passage describing round robin with a fixed time slice and then contrasting it with the convoy effect of a long non preemptive process. Both halves of the question are answered there and nowhere else. Intended distractors: distractor-notes#4 is deliberately much longer and shares scheduling, policy, processor, process, preempt and queue throughout while describing none of them, and distractor-notes#3 is shorter than os-notes#8 while also being non-answering, so the query is discriminative for a length-aware scorer in both directions."
+    },
+    {
+      "id": "q20-producer-consumer-conditions",
+      "text": "How do a producer and a consumer thread share a fixed size buffer without either spinning?",
+      "relevant": ["os-notes#17"],
+      "category": "cross-material-lexical-collision",
+      "adjudication": "os-notes#17 is the passage describing the producer consumer problem with condition variables and the explicit instruction not to spin. distractor-notes#2 deliberately restates buffer, pool, cache, page and process vocabulary across materials to create a collision, and db-notes#0 discusses a buffer pool with allocation and eviction, so a query containing 'buffer' has three plausible-looking neighbours. Only os-notes#17 mentions producers and consumers."
+    },
+    {
+      "id": "q21-system-call-entry",
+      "text": "How does a user program request a privileged service from the kernel?",
+      "relevant": ["os-notes#18"],
+      "category": "multi-hop-wording",
+      "adjudication": "os-notes#18 describes the system call entry path, and the query names neither 'system call' nor 'trap'. The phrase 'privileged service' is a description of the concept rather than its name, so answering requires knowing that the mechanism is called a system call. Intended distractor: os-notes#12 describes the trap instruction itself, which is the mechanism the system call uses but not the entry point the question asks about, so the two passages are adjacent and must not be confused."
+    },
+    {
+      "id": "q22-deadlock-conditions-evidential",
+      "text": "What are the necessary conditions for a deadlock, and why does each one matter?",
+      "relevant": ["os-notes#2"],
+      "category": "lexical-maximal-evidential-empty",
+      "adjudication": "os-notes#2 is the answer because it names each of the four conditions and states what each one requires, which is what 'why each one matters' asks for. distractor-notes#5 lists the same four conditions as bare bullet items and explains none of them, so it is lexically maximal for the query and evidentially empty. This is the sharpest test in the set of whether a scorer rewards evidence or mere term presence, and it directly extends the original q03 with an explanatory clause that a keyword list cannot satisfy."
+    },
+    {
+      "id": "q23-deadlock-glossary-trap",
+      "text": "What does the term deadlock mean?",
+      "relevant": ["os-notes#2"],
+      "category": "short-glossary-trap",
+      "adjudication": "A request for a definition is answered by os-notes#2, the passage that explains the conditions, and not by a glossary stub. distractor-notes#1 contains the word deadlock and a pointer to the main article, is far shorter, and answers nothing. This is the length-normalisation test: a scorer that ignores document length prefers the stub, because the stub's short length carries no penalty and its lexical match is exact."
+    },
+    {
+      "id": "q24-pipeline-dependency-stall",
+      "text": "Why does a wide processor still slow down when two instructions depend on each other?",
+      "relevant": ["sysarch-notes#0"],
+      "category": "lexically-weak-semantically-obvious",
+      "adjudication": "sysarch-notes#0 is the passage stating that a data dependency stalls the pipeline regardless of execution width, and that the compiler reorders independent instructions to compensate. The query's vocabulary — wide, processor, slow down, depend — is almost disjoint from the passage's, which is what makes this the designated case for a future dense retriever. No lexical retriever should be expected to place this correctly, and that expectation is recorded here so the query is not later mistaken for a mislabelling."
+    },
+    {
+      "id": "q25-cache-write-policy",
+      "text": "When does a cache write a dirty line back to memory, and how do the ways of organising it differ?",
+      "relevant": ["sysarch-notes#4"],
+      "category": "synonym-substitution",
+      "adjudication": "sysarch-notes#4 is the passage contrasting direct mapped against set associative organisation and write through against write back. The query says 'ways of organising it' where the passage says 'sets of lines' and 'associative', so the second clause needs the concept recognised. Intended distractor: distractor-notes#2 uses cache, and db-notes#0 uses eviction of a dirty page, but neither describes cache organisation or write policy."
+    },
+    {
+      "id": "q26-wal-recovery",
+      "text": "How does a system make committed changes survive a crash without locking out all other transactions?",
+      "relevant": ["sysarch-notes#2"],
+      "category": "multi-hop-wording",
+      "adjudication": "sysarch-notes#2 describes the write ahead log, replay based recovery, and the log acting as the single serialisation point that preserves atomicity without locking the whole database. The query never says 'write ahead log' or 'logging', so it must be recognised from the description of surviving a crash while remaining concurrent. Intended distractor: sysarch-notes#3 is about crash behaviour too, isolating address spaces, and shares crash and memory vocabulary, but answers a different question."
+    },
+    {
+      "id": "q27-model-generalisation-gap",
+      "text": "How do you tell whether a model will work on data it has never seen?",
+      "relevant": ["ml-notes#0"],
+      "category": "synonym-substitution",
+      "adjudication": "ml-notes#0 is the passage that defines a held out test set and states explicitly that a model selected on the data it is scored on reports performance that does not generalise. The query asks about unseen data in general terms. Intended distractors: ml-notes#1 discusses the gap between training and unseen data while describing regularisation, so it is adjacent; a reader asking how to tell would consult the definitions of the three splits, not the regularisation passage."
+    },
+    {
+      "id": "q28-stopword-heavy",
+      "text": "What is it that the operating system does when a program is interrupted while it is running?",
+      "relevant": ["os-notes#0", "os-notes#12"],
+      "category": "stopword-and-short-token",
+      "adjudication": "Two passages are required. os-notes#0 gives the process state the process enters when it stops executing, which is the outcome half of the question. os-notes#12 describes the mechanism of transfer of control to the kernel, which is the 'what does the operating system do' half. This query is authored to exercise tokenisation: after stop word and short token removal it retains only operating, system, program, interrupted, running, so most of its discriminative content is in words a naive tokenizer would discard. It is included so that tokenization behaviour is measurable rather than incidental."
+    },
+    {
+      "id": "q29-indexing-cold-cache",
+      "text": "Why is walking a directory tree slow the first time it is done on cold storage?",
+      "relevant": ["os-notes#16"],
+      "category": "late-answer",
+      "adjudication": "os-notes#16 is the passage that explains directory traversal as a sequence of random accesses and states that it is expensive on cold storage. It sits late in the corpus, after the material that shares the word index and cache, so a retriever that truncates or scans only a prefix would miss it. Intended distractor: sysarch-notes#4 is about a processor cache and shares cache and storage vocabulary while answering a different question."
+    },
+    {
+      "id": "q30-unanswerable-kubernetes",
+      "text": "How do you configure a Kubernetes cluster to schedule GPU workloads?",
+      "relevant": [],
+      "answerable": false,
+      "category": "unanswerable",
+      "adjudication": "This corpus covers operating systems, system architecture, machine learning and a few deliberately authored distractors. It contains nothing about container orchestration, cluster scheduling or accelerator devices. Recorded as unanswerable so a retriever's handling of a question it cannot answer is observable, and so that a future retriever gains something to improve: this is the case where returning a confident top five is the failure mode. Excluded from HitRate, Precision and MRR, which have no meaningful value for a query with no relevant chunk, and scored instead by the no false positive check."
+    },
+    {
+      "id": "q31-unanswerable-compiler-codegen",
+      "text": "How does a just in time compiler decide which functions to inline?",
+      "relevant": [],
+      "answerable": false,
+      "category": "unanswerable",
+      "adjudication": "sysarch-notes#0 mentions that a compiler reorders instructions, which is the only compiler reference in the corpus, and it is about instruction scheduling rather than inlining decisions. No passage describes a just in time compiler, a tiered compilation strategy, or an inlining cost model. Authored with one near-miss term present so the case tests whether a retriever is misled by a single adjacent word, and so it is not solvable by refusing to answer everything."
+    }
+  ]
+}
