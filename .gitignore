@@ -11,6 +11,9 @@ dist/
 dist-ssr/
 build/
 coverage/
+# Written by `tsc -b`, which the typecheck script runs in build mode so that the
+# root solution config is what gets validated. Incremental state, not source.
+*.tsbuildinfo
 
 # ==================================================
 # Environment
