@@ -7,6 +7,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/lib/api";
 import {
+  AlertTriangle,
   CheckCircle2,
   XCircle,
   ChevronDown,
@@ -32,6 +33,7 @@ const ResultAssessment = () => {
   const [isCreatingMistakeDeck, setIsCreatingMistakeDeck] = useState(false);
   const [mistakeDeckError, setMistakeDeckError] = useState<string | null>(null);
 
+
   const {
     score = 0,
     total = 1,
@@ -42,7 +44,85 @@ const ResultAssessment = () => {
     quizId = "",
     mistakeAnalyses = [],
     attemptId = undefined,
+    backgroundProcessing = null,
   } = lastResult || {};
+
+  /**
+   * How each state of the attempt's background job is presented.
+   *
+   * The five states are kept apart on purpose, because collapsing any two of them
+   * states something the server did not:
+   *
+   * - `failed` means the job ran and did not finish;
+   * - `not_scheduled` means it never started, which is a different fault with a
+   *   different consequence and is the one this page exists to surface;
+   * - a `trackingError` means a status *read* failed, which says nothing at all
+   *   about the job, so the underlying status is still what gets presented.
+   *
+   * None of the unapplied states claims the effects were applied, and none
+   * promises a repair: nothing re-enqueues the job, so a retake is the only
+   * honest remedy this page can point at.
+   */
+  const ATTEMPT_JOB_PRESENTATION = {
+    pending: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Applying",
+    },
+    queued: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Queued",
+    },
+    running: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Running",
+    },
+    completed: {
+      title: "This attempt is fully applied",
+      detail:
+        "Your score, topic progress and review queue have all been updated with this attempt.",
+      Icon: CheckCircle2,
+      iconClass: "text-emerald-500",
+      badgeClass: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+      badgeText: "Applied",
+    },
+    failed: {
+      title: "This attempt's updates did not finish",
+      detail:
+        "Your score is saved, but the background job ran and did not complete, so this attempt is not reflected in your topic progress or review queue.",
+      Icon: XCircle,
+      iconClass: "text-destructive",
+      badgeClass: "border-destructive/40 text-destructive",
+      badgeText: "Failed",
+    },
+    not_scheduled: {
+      title: "This attempt was not applied",
+      detail:
+        "Your score is saved, but the background job was never started, so this attempt is not reflected in your topic progress or review queue. Taking the quiz again will apply that attempt instead.",
+      Icon: AlertTriangle,
+      iconClass: "text-amber-500",
+      badgeClass: "border-amber-500/50 text-amber-600 dark:text-amber-400",
+      badgeText: "Not applied",
+    },
+  } as const;
+
+  const attemptJob = backgroundProcessing?.status
+    ? ATTEMPT_JOB_PRESENTATION[backgroundProcessing.status]
+    : null;
   const percentage = Math.round((score / Math.max(total, 1)) * 100);
 
   // Performance analysis
@@ -516,6 +596,44 @@ const ResultAssessment = () => {
           <p role="alert" className="mt-3 text-sm text-rose-400">
             {mistakeDeckError}
           </p>
+        )}
+
+        {/*
+          Whether the attempt's adaptive effects were actually applied. The score
+          above is correct either way — the attempt is committed before the job is
+          scheduled — so this is additional information about what the score did and
+          did not feed into, not a qualification of the score itself.
+
+          Rendered for every reported state, including the healthy one, so a
+          learner is not left wondering whether the absence of a warning means
+          "applied" or merely "not reported".
+        */}
+        {attemptJob && (
+          <div
+            role="status"
+            className={`mt-4 flex items-start gap-3 rounded-lg border p-4 ${
+              backgroundProcessing?.status === "completed"
+                ? "border-emerald-500/30 bg-emerald-500/5"
+                : backgroundProcessing?.status === "failed" || backgroundProcessing?.status === "not_scheduled"
+                  ? "border-amber-500/30 bg-amber-500/5"
+                  : "border-border bg-muted/20"
+            }`}
+          >
+            <attemptJob.Icon className={`mt-0.5 h-4 w-4 shrink-0 ${attemptJob.iconClass}`} />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-medium text-foreground">{attemptJob.title}</p>
+              <p className="text-xs text-muted-foreground">{attemptJob.detail}</p>
+              {backgroundProcessing?.trackingError && (
+                <p className="text-xs text-muted-foreground/80">
+                  {backgroundProcessing.trackingError} The status shown above is the last one
+                  read, not a failure of the job itself.
+                </p>
+              )}
+            </div>
+            <Badge variant="outline" className={attemptJob.badgeClass}>
+              {attemptJob.badgeText}
+            </Badge>
+          </div>
         )}
       </div>
     </AppLayout>

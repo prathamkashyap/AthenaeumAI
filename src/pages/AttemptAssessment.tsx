@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useQuiz, Question, MistakeAnalysis } from "@/context/QuizContext";
+import { useQuiz, Question, MistakeAnalysis, BackgroundProcessing } from "@/context/QuizContext";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -100,7 +100,9 @@ const AttemptAssessment = () => {
     });
 
     // Save attempt to backend
-    let savedAttempt: { attemptId?: string; mistakeAnalyses?: MistakeAnalysis[] } | void;
+    let savedAttempt:
+      | { attemptId?: string; mistakeAnalyses?: MistakeAnalysis[]; backgroundProcessing?: BackgroundProcessing | null }
+      | void;
     if (currentQuiz?.quizId) {
       savedAttempt = await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers, timeElapsed);
     }
@@ -118,6 +120,15 @@ const AttemptAssessment = () => {
       // generated from this specific attempt. Undefined when the attempt was not
       // persisted, in which case no such set can be built.
       attemptId: savedAttempt && "attemptId" in savedAttempt ? savedAttempt.attemptId : undefined,
+      // Carried so the result page can say whether the attempt's adaptive effects
+      // were applied. The attempt is committed before `SYNC_ATTEMPT` is
+      // scheduled, so a job that was never scheduled leaves progress, learning
+      // events and the review queue permanently without this attempt — and unlike
+      // material indexing there is no read-time path that would apply them later.
+      backgroundProcessing:
+        savedAttempt && "backgroundProcessing" in savedAttempt
+          ? savedAttempt.backgroundProcessing ?? null
+          : null,
     });
 
     navigate(`/assessments/${id}/result`);

@@ -18,6 +18,15 @@ export interface QuizData {
   questionCount: number;
   quiz: Question[];
   materialId?: string;
+  /**
+   * The indexing job reported by the generation response, or absent.
+   *
+   * Declared because `generateQuiz` reads it, and reading a field the type does
+   * not describe is a type error. This is the `INDEX_MATERIAL` counterpart to
+   * `AttemptResult.backgroundProcessing`; the generate response has carried the
+   * field since the job-status work, and only the type was missing.
+   */
+  backgroundProcessing?: BackgroundProcessing | null;
 }
 
 export interface AttemptResult {
@@ -38,6 +47,21 @@ export interface AttemptResult {
    * are the same condition, so the UI can key off this being present.
    */
   attemptId?: string;
+  /**
+   * The background job that applies this attempt's learner effects, as reported
+   * by the attempt response.
+   *
+   * The attempt is written before `SYNC_ATTEMPT` is scheduled, so the attempt and
+   * its score exist whether or not the job ever ran. This field previously had no
+   * home on the result at all: `saveAttempt` declared only `attemptId` and
+   * `mistakeAnalyses`, so a job that was never scheduled — meaning topic
+   * progress, learning events and the review-queue rebuild were silently never
+   * applied — reached the learner as an ordinary-looking score.
+   *
+   * `SYNC_ATTEMPT` has no read-time recovery the way material indexing has, so
+   * this state cannot resolve itself. It is disclosed, not repaired.
+   */
+  backgroundProcessing?: BackgroundProcessing | null;
 }
 
 export interface MistakeAnalysis {
@@ -136,7 +160,7 @@ interface QuizContextType {
   generateQuiz: (file: File, difficulty: string, count?: number) => Promise<QuizData>;
   fetchQuiz: (id: string) => Promise<QuizData>;
   setResult: (result: AttemptResult) => void;
-  saveAttempt: (quizId: string, score: number, total: number, answers: number[], durationSeconds?: number) => Promise<{ attemptId?: string; mistakeAnalyses?: MistakeAnalysis[] } | void>;
+  saveAttempt: (quizId: string, score: number, total: number, answers: number[], durationSeconds?: number) => Promise<{ attemptId?: string; mistakeAnalyses?: MistakeAnalysis[]; backgroundProcessing?: BackgroundProcessing | null } | void>;
   clearError: () => void;
   clearQuiz: () => void;
 }
@@ -163,6 +187,13 @@ const TERMINAL_STATUSES = new Set<BackgroundProcessing["status"]>([
   "failed",
   "not_scheduled",
 ]);
+
+/**
+ * Wording for a status read that failed. Deliberately says nothing about the job
+ * itself, because a transport failure is not a job outcome, and this text is
+ * shown whether it is an `INDEX_MATERIAL` or a `SYNC_ATTEMPT` job being followed.
+ */
+const TRACKING_ERROR = "Could not read the latest background status.";
 
 const isTerminalStatus = (status: BackgroundProcessing["status"]) => TERMINAL_STATUSES.has(status);
 
@@ -197,7 +228,34 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * Follows the indexing job until it settles.
+   * The job currently being followed, whichever surface reported it.
+   *
+   * `INDEX_MATERIAL` is tracked on the create-assessment page and `SYNC_ATTEMPT`
+   * on the result page, so the two are never live at the same moment. Resolving
+   * to one job here is what lets a single polling loop serve both, rather than
+   * the result page growing a second interval that would duplicate the loop's
+   * terminal-state and transport-failure handling — the two places most likely
+   * to be got subtly differently.
+   */
+  const trackedJob = backgroundProcessing ?? lastResult?.backgroundProcessing ?? null;
+
+  /**
+   * Writes an updated job back to whichever slot reported it, so the page that
+   * asked for the status is the one that sees it change.
+   */
+  const applyJobUpdate = useCallback(
+    (update: (previous: BackgroundProcessing) => BackgroundProcessing) => {
+      setBackgroundProcessing((previous) => (previous ? update(previous) : previous));
+      setLastResult((previous) => {
+        if (!previous?.backgroundProcessing) return previous;
+        return { ...previous, backgroundProcessing: update(previous.backgroundProcessing) };
+      });
+    },
+    []
+  );
+
+  /**
+   * Follows the tracked job until it settles.
    *
    * Depends on the status as well as the job id, and that is load-bearing rather
    * than incidental. The interval's own callback cannot stop itself: by the time
@@ -211,8 +269,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
    * irrelevant, and it is the reason the loop cannot outlive its job.
    */
   useEffect(() => {
-    const jobId = backgroundProcessing?.jobId;
-    const status = backgroundProcessing?.status;
+    const jobId = trackedJob?.jobId;
+    const status = trackedJob?.status;
 
     if (!jobId || !status || isTerminalStatus(status)) return;
 
@@ -223,16 +281,18 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       if (!latest) {
-        // Keep the status we already have; only the tracking is degraded.
-        setBackgroundProcessing((previous) =>
-          previous && previous.jobId === jobId
-            ? { ...previous, trackingError: "Could not read the latest indexing status." }
-            : previous,
+        // Keep the status we already have; only the tracking is degraded. A read
+        // that failed is not evidence the job failed, and writing `failed` here
+        // would tell a learner their attempt was not applied when it may have been.
+        applyJobUpdate((previous) =>
+          previous.jobId === jobId
+            ? { ...previous, trackingError: TRACKING_ERROR }
+            : previous
         );
         return;
       }
 
-      setBackgroundProcessing(latest);
+      applyJobUpdate((previous) => (previous.jobId === jobId ? latest : previous));
     };
 
     const timer = setInterval(poll, JOB_STATUS_POLL_INTERVAL_MS);
@@ -240,7 +300,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [backgroundProcessing?.jobId, backgroundProcessing?.status, fetchJobStatus]);
+  }, [trackedJob?.jobId, trackedJob?.status, fetchJobStatus, applyJobUpdate]);
 
   const generateQuiz = useCallback(async (file: File, difficulty: string, count: number = 5): Promise<QuizData> => {
     setIsGenerating(true);
