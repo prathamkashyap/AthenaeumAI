@@ -423,9 +423,21 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ score, total, answers, durationSeconds }),
       });
-      if (response.ok) return response.json();
+      // A non-OK response is a failed save, not a save with nothing to return.
+      // Returning undefined here let the caller build a result page for an attempt
+      // that was never persisted, and the attempt route is rate limited, so a 429
+      // is a reachable outcome here rather than a theoretical one. The server's
+      // own message is the useful one, and throwing matches generateQuiz above.
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: null }));
+        throw new Error(errData?.error || `Could not save your attempt (${response.status}).`);
+      }
+      return await response.json();
     } catch (err) {
       console.warn("Failed to save attempt:", err);
+      // Still reported here as before, and re-thrown so the caller can keep the
+      // learner out of a result page that implies the attempt was recorded.
+      throw err instanceof Error ? err : new Error("Could not save your attempt.");
     }
   }, []);
 
