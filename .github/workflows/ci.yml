@@ -20,15 +20,6 @@ jobs:
         working-directory: backend
 
     services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       redis:
         image: redis:7-alpine
         ports:
@@ -62,6 +53,74 @@ jobs:
 
       - name: Install backend dependencies
         run: npm ci
+
+      # MongoDB is started as a step rather than declared under `services:`
+      # because a service container runs the image's default command, and
+      # mongo:7's default command has no --replSet. A standalone server cannot
+      # run the multi-document transaction that SYNC_ATTEMPT depends on, so the
+      # real transaction path would be impossible to exercise in CI. Redis
+      # remains an ordinary service.
+      - name: Start MongoDB as a single-node replica set
+        run: |
+          docker run -d --name athenaeum-mongo-rs \
+            -p 27017:27017 \
+            mongo:7 mongod --replSet rs0 --bind_ip_all
+
+      - name: Initialize the replica set and wait for PRIMARY
+        run: |
+          cat > init-replica-set.mjs <<'EOF'
+          import { MongoClient } from "mongodb";
+
+          const uri = "mongodb://localhost:27017/?directConnection=true";
+          const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000 });
+
+          // mongod accepts connections moments before it is reachable, so the
+          // first connect races the container finishing its startup.
+          let connected = false;
+          for (let attempt = 1; attempt <= 30 && !connected; attempt += 1) {
+            try {
+              await client.connect();
+              connected = true;
+            } catch (error) {
+              if (attempt === 30) throw error;
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+          }
+
+          // --replSet alone does not create the set: without this command the
+          // deployment stays uninitialized and transactions stay unavailable.
+          await client
+            .db("admin")
+            .command({
+              replSetInitiate: {
+                _id: "rs0",
+                members: [{ _id: 0, host: "localhost:27017" }],
+              },
+            })
+            .catch((error) => {
+              // Re-running the step against an already-initialized set is fine.
+              if (!/already initialized/i.test(error.message)) throw error;
+            });
+
+          let primary = false;
+          for (let attempt = 1; attempt <= 60 && !primary; attempt += 1) {
+            const status = await client.db("admin").command({ replSetGetStatus: 1 });
+            primary = status.members.some((member) => member.stateStr === "PRIMARY");
+            if (!primary) await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+
+          // Fail loudly rather than letting the integration suite run against a
+          // deployment that silently cannot transact.
+          if (!primary) throw new Error("MongoDB replica set rs0 never reached PRIMARY.");
+
+          const hello = await client.db("admin").command({ hello: 1 });
+          console.log(
+            "Replica set " + hello.setName + " is PRIMARY (writable=" + hello.isWritablePrimary + ")",
+          );
+          await client.close();
+          EOF
+          node init-replica-set.mjs
+          rm -f init-replica-set.mjs
 
       - name: Run unit tests with coverage
         run: node --experimental-vm-modules node_modules/.bin/jest --testPathPatterns=tests/unit --coverage --coverageReporters=text --coverageReporters=lcov
