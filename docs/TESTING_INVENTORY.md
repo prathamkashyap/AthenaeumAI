@@ -282,8 +282,8 @@ any test in the repository.
 
 | Production area | Direct unit test | Integration coverage | E2E coverage | Coverage quality | Gap |
 | --------------- | ---------------- | -------------------- | ------------ | ---------------- | --- |
-| `aiQuizService.js` | None. | Module is loaded transitively by route import, so module-level declarations count. | None | 14.56% statements, **0.00% functions.** | `generateQuizFromAI`, `generateFlashcardsFromAI`, `generateMistakeAnalysesFromAI`, `generateTutorResponseFromAI`, `getGroqClient`, and all prompt builders are never executed. |
-| `quizService.js` | None. | None. | None | 6.57% statements, 0.00% functions. | `generateQuiz`, `isSimilar`, `removeSimilar`, `scoreQuestion`, `fallbackQuizGenerator` never executed. Reachable only from the demo seeder. |
+| `aiQuizService.js` | **Partial** — `quizService.test.js` and `quizGenerationController.test.js` drive `generateQuizFromAI` against a stubbed provider; the flashcard, mistake-analysis and tutor suites replace the whole module. | Module is loaded transitively by route import, so module-level declarations count. | None | Prior measurement, predates the current code: 14.56% statements, **0.00% functions.** Not re-measured. | `generateQuizFromAI` **is** executed, via `generateQuiz` (`quizService.js:36`); those suites stub the provider rather than this module. `generateFlashcardsFromAI`, `generateMistakeAnalysesFromAI`, `generateTutorResponseFromAI`, `getGroqClient`, and all prompt builders are never executed. |
+| `quizService.js` | **Direct** — `tests/unit/quizService.test.js` and `tests/unit/quizGenerationController.test.js` (97 tests across the quiz-generation suites). | Loaded transitively by the route import; the live upload route calls `generateQuiz` (`quizController.js:117`). | `tests/e2e/async-job-lifecycle.spec.ts` submits a PDF and asserts the generated quiz and its tracked job. | Prior measurement, predates the current code: 6.57% statements, 0.00% functions. Not re-measured. | `generateQuiz`, `isSimilar`, `removeSimilar` and `scoreQuestion` are all executed, by the unit suites and by the live upload route. `fallbackQuizGenerator` was removed in `cd65a23`; quiz generation now raises `AIServiceError` (HTTP 502) instead of synthesising questions. `seedDefaultQuizzes`, the only other caller, is never invoked. |
 | `mistakeAnalysisService.js` | None. | None. | None | 11.76% statements, 0.00% functions. | `analyzeMistakesForAttempt` and `fallbackAnalysis` never executed. |
 | `streamingTutorService.js` | None. | None. | None | **0.00% across all metrics.** | `streamTutorResponse` never executed. The E2E tutor mock intercepts the HTTP route, so this module is never reached even in E2E. |
 | `tutorService.js` | None. | None — `tutorRoutes` is not mounted by `api.test.js`. | None — mocked at the browser layer. | **0.00% across all metrics.** | `gatherTutorContext` and `askContextualTutor` never executed, including the retrieval branch. |
@@ -459,7 +459,7 @@ Both facts are recorded here as observations about current behaviour. Neither wa
 
 | AI path | Unit test | Integration test | E2E test | Requires live Groq? | Current status |
 | ------- | --------- | ---------------- | -------- | ------------------- | -------------- |
-| `generateQuizFromAI` (`aiQuizService.js:279-356`) | None | None — `quizController` is loaded but `saveAttempt`/`generateQuizController` are never invoked | None — no E2E test posts to `/quiz/generate` | **Yes**, at runtime | **Untested.** 0.00% function coverage. |
+| `generateQuizFromAI` (`aiQuizService.js:279-356`) | **Direct**, indirectly — `quizService.test.js` and `quizGenerationController.test.js` reach it through `generateQuiz`. | Reached by the live upload route (`quizController.js:117`). | `tests/e2e/async-job-lifecycle.spec.ts` posts a PDF to `/quiz/generate`. | **Yes**, at runtime | Covered at the function level, but only against a stubbed provider, so its prompt construction is asserted indirectly rather than pinned to real provider output. |
 | `generateTutorResponseFromAI` (`aiQuizService.js:482-563`) | None | None — `tutorRoutes` not mounted | None — the E2E tutor test mocks the HTTP route | **Yes**, at runtime | **Untested.** |
 | `streamTutorResponse` (`streamingTutorService.js:16-86`) | None | None | None | **Yes**, at runtime | **Untested.** 0.00% across all metrics. |
 | `generateMistakeAnalysesFromAI` (`aiQuizService.js:414-480`) | None | None — `saveAttempt` never invoked | None | **Yes**, at runtime | **Untested.** |
@@ -467,7 +467,7 @@ Both facts are recorded here as observations about current behaviour. Neither wa
 | `generateFlashcardsFromAI` (`aiQuizService.js:358-412`) | None | None — `generateFlashcardSet` never invoked | None | **Yes**, at runtime | **Untested.** |
 | `getGroqClient` (`aiQuizService.js:9-17`, `streamingTutorService.js:6-14`) | None | None | None | — | **Untested.** No test constructs a Groq client, valid or invalid. |
 | Prompt builders (`buildPrompt`, `getDefaultCognitiveLevel`, `VALID_COGNITIVE_LEVELS`) | None | None | None | no | **Untested**, except that `getDefaultCognitiveLevel` and `VALID_COGNITIVE_LEVELS` are exported and therefore not covered. |
-| Fallback generators (`fallbackTutorResponse`, `fallbackAnalysis`, `fallbackFromQuestions`, `fallbackFromText`, `fallbackQuizGenerator`) | None | None | None | no | **Untested.** All are internal to their modules and only reachable on LLM failure. |
+| Fallback generators (`fallbackTutorResponse`, `fallbackAnalysis`, `fallbackFromQuestions`, `fallbackFromText`) | None | None | None | no | **Untested.** All are internal to their modules and only reachable on LLM failure. |
 
 ### Is `groqMock.js` imported anywhere?
 
@@ -761,9 +761,11 @@ Each gap below is a direct consequence of the inventory above.
    imported by nothing, is not collected by Jest, and could not be wired in without adding a
    seam, because both services call `new Groq(...)` inline. Its `MOCK_TUTOR_RESPONSE` shape
    also does not match the current tutor response contract.
-9. `docs/CLAIM_STATUS.md` records that quiz quality filtering and non-trivial deduplication are
-   reachable only from the demo seeder. The 25-case `qualityFilter` suite therefore covers a
-   module that no user-facing request executes.
+9. Quiz quality filtering and non-trivial deduplication are on the live upload path: the route
+   calls `generateQuiz` (`quizController.js:117`), which filters, de-duplicates and ranks before
+   persisting. The 25-case `qualityFilter` suite therefore covers a module a user-facing request
+   does execute. (`docs/CLAIM_STATUS.md` previously said otherwise; that was corrected in
+   `a0323c9`.)
 
 **Retrieval**
 

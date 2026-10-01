@@ -383,14 +383,15 @@ not as something to fix in the middle of a demo.
 
 **Quality of generated quizzes**
 
-- The live upload path applies structural validation only: four options, an answer index in
-  0–3, and a known cognitive level. Questions failing that check are dropped silently.
-- The live path performs exact-string question de-duplication. Nothing is dropped for being
-  merely similar.
-- The scored quality filter and the token-overlap de-duplication exist in the code but are not
-  on the live upload path; they are reachable only from the demo seeder.
-- If Groq fails for every chunk, the request returns an error. There is no degraded or
-  fallback quiz on the live path.
+- The live upload path is: upload → extract text → `generateQuiz` → structural validation
+  (four options, an answer index in 0–3, a known cognitive level) → scored quality filter →
+  token-overlap de-duplication → ranking → persist. Questions failing the structural check are
+  dropped silently.
+- De-duplication is token-overlap, not exact-string: two questions sharing more than 60% of
+  their tokens are treated as the same and the later one is dropped. So a genuinely distinct
+  question that reuses the source's vocabulary can be discarded.
+- If Groq fails for every chunk, the request returns an error — HTTP 502 via `AIServiceError`.
+  There is no degraded or fallback quiz on the live path.
 
 ---
 
