@@ -17,6 +17,7 @@ import {
   createFailingAIProvider,
 } from "../mocks/mockAIProvider.js";
 import { setAIProvider, resetAIProvider } from "../../services/aiProvider.js";
+import { AIServiceError } from "../../utils/errors.js";
 import { calculateQualityScore } from "../../utils/qualityFilter.js";
 
 const { generateQuiz } = await import("../../services/quizService.js");
@@ -394,32 +395,25 @@ describe("generateQuiz", () => {
     expect(questions.map((q) => q.question)).toEqual([longExplanation.question, shortExplanation.question]);
   });
 
-  test("falls back to source sentences when the model produces nothing usable", async () => {
+  test("fails when the model produces prose instead of questions", async () => {
     useProvider(createMockAIProvider("I am unable to generate a quiz from this material."));
 
-    const questions = await generateQuiz(MATERIAL, "Medium", 2);
-
-    // The fallback derives True/False-style questions from the source sentences.
-    expect(questions).toHaveLength(2);
-    expect(questions[0]).toMatchObject({
-      options: ["True", "False", "Depends", "None"],
-      answer: 0,
-      explanation: "Generated from source text",
-    });
+    // Nothing usable came back, so this is a provider failure. It used to be
+    // answered with True/False questions built from the source sentences.
+    await expect(generateQuiz(MATERIAL, "Medium", 2)).rejects.toThrow(AIServiceError);
   });
 
-  test("falls back when the model provider fails outright", async () => {
+  test("fails when the model provider fails outright", async () => {
     useProvider(createFailingAIProvider(new Error("model unavailable")));
 
-    const questions = await generateQuiz(MATERIAL, "Medium", 2);
-
-    expect(questions).toHaveLength(2);
-    expect(questions[0].explanation).toBe("Generated from source text");
+    await expect(generateQuiz(MATERIAL, "Medium", 2)).rejects.toThrow(AIServiceError);
   });
 
-  test("falls back without asking the model when the material is too short", async () => {
-    // Below 500 characters the pipeline skips generation entirely, so the model
-    // is never asked and the deterministic fallback supplies the questions.
+  test("rejects short material without asking the model, and does not invent questions", async () => {
+    // Below 500 characters the pipeline cannot generate at all. That is an input
+    // problem, not a provider failure, so it keeps its own message -- and it must
+    // never be answered with synthetic questions, which is what this path used
+    // to do.
     const short = (
       "A deadlock arises when two processes each hold a resource the other requires. " +
       "The circular wait condition describes this mutual dependency precisely. "
@@ -428,21 +422,47 @@ describe("generateQuiz", () => {
 
     const provider = useProvider(createMockAIProvider([strongQuestion()]));
 
-    const questions = await generateQuiz(short, "Medium", 2);
-
+    await expect(generateQuiz(short, "Medium", 2)).rejects.toThrow(
+      "PDF content too small for quiz generation",
+    );
     expect(provider.complete).not.toHaveBeenCalled();
-    expect(questions).toHaveLength(2);
-    expect(questions[0].explanation).toBe("Generated from source text");
   });
 
-  test("throws when even the fallback cannot build a quiz", async () => {
+  test("reports a provider failure instead of returning a synthetic quiz", async () => {
+    // The failure this task removed: the provider is down and the service used to
+    // answer with questions that were all "True" and explained as "Generated from
+    // source text", indistinguishable from a real generated assessment.
+    useProvider(createFailingAIProvider(new Error("model unavailable")));
+
+    const failure = await generateQuiz(MATERIAL, "Medium", 3).catch((e) => e);
+
+    expect(failure).toBeInstanceOf(AIServiceError);
+    expect(failure.message).toBe("Failed to generate questions. Please try again.");
+    // Nothing that looks like a quiz may come back at all.
+    expect(Array.isArray(failure) ? failure : []).toEqual([]);
+  });
+
+  test("keeps the internal cause on the failure for diagnosis", async () => {
+    useProvider(createFailingAIProvider(new Error("model unavailable")));
+
+    const failure = await generateQuiz(MATERIAL, "Medium", 3).catch((e) => e);
+
+    // `tryGenerate` retries each chunk and absorbs the provider error, so the
+    // preserved cause is the pipeline's own "no usable questions" signal rather
+    // than the provider's message. Pinning the real behaviour: the cause is
+    // present for logging, and it is not the provider error.
+    expect(failure.originalError).toBeInstanceOf(Error);
+    expect(failure.originalError.message).toBe("AI returned empty result");
+  });
+
+  test("fails on unusable source text rather than inventing a quiz from it", async () => {
     // Long enough to pass the 500-character gate, so generation is attempted and
-    // fails, but the text contains no sentence the fallback can turn into a
-    // question, so the failure surfaces to the caller.
+    // fails. This text also has no sentence a question could be built from, so
+    // with the fallback gone there is nothing left to answer with.
     useProvider(createFailingAIProvider(new Error("model unavailable")));
     const unsplittable = "x".repeat(600);
 
-    await expect(generateQuiz(unsplittable, "Medium", 2)).rejects.toThrow("Not enough meaningful content");
+    await expect(generateQuiz(unsplittable, "Medium", 2)).rejects.toThrow(AIServiceError);
   });
 
   test("preserves the accepted questions across several chunks", async () => {

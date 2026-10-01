@@ -215,7 +215,7 @@ describe("the live generation path", () => {
     // The AI service only validates structure, so without the quality stage this
     // question would reach the database. That is precisely the defect Task 9
     // removes. With the stage in place it is filtered, leaving nothing for the
-    // pipeline to return, so the deterministic fallback supplies the quiz.
+    // pipeline to return.
     const raw = rejectedByQualityFilter();
     expect(Array.isArray(raw.options)).toBe(true);
     expect(raw.options).toHaveLength(4);
@@ -224,12 +224,17 @@ describe("the live generation path", () => {
 
     setAIProvider(createMockAIProvider([raw]));
 
-    await drive();
+    const { res, next } = await drive();
 
-    const persisted = persistedQuestions();
-    expect(persisted.length).toBeGreaterThan(0);
-    expect(persisted.some((q) => q.question === raw.question)).toBe(false);
-    expect(persisted.every((q) => q.explanation === "Generated from source text")).toBe(true);
+    // Filtering everything out leaves the pipeline with no questions, which is a
+    // failed request. What this test pins is that the low-quality question never
+    // reaches the database -- previously that was only asserted indirectly,
+    // because a fallback quiz was persisted alongside it.
+    expect(res.body).toBeNull();
+    expect(next).toHaveBeenCalled();
+    // Nothing is written at all, so the low-quality question cannot have reached
+    // the database. Previously a fallback quiz was persisted in its place.
+    expect(quizCreate).not.toHaveBeenCalled();
   });
 
   test("returns the documented response shape", async () => {
@@ -426,47 +431,55 @@ describe("the live generation path", () => {
 // ─── Degradation and failure ──────────────────────────────────────────────────
 
 describe("the live generation path under failure", () => {
-  test("falls back to source sentences when the model fails outright", async () => {
+  test("fails the request when the model provider fails outright", async () => {
     setAIProvider(createFailingAIProvider(new Error("model unavailable")));
 
     const { res, next } = await drive();
 
-    expect(next).not.toHaveBeenCalled();
-    expect(res.body.quiz.length).toBeGreaterThan(0);
-    expect(res.body.quiz[0]).toMatchObject({
-      options: ["True", "False", "Depends", "None"],
-      explanation: "Generated from source text",
-    });
+    // A provider that cannot answer is a failed request. It used to return
+    // synthetic True/False questions built from the source sentences and persist
+    // them as a normal quiz, which is indistinguishable from a real one.
+    expect(res.body).toBeNull();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Failed to generate questions. Please try again.",
+    }));
+    expect(quizCreate).not.toHaveBeenCalled();
   });
 
-  test("falls back when the model returns prose instead of JSON", async () => {
+  test("fails the request when the model returns prose instead of JSON", async () => {
     setAIProvider(createMockAIProvider("I am unable to help with that request."));
 
-    const { res } = await drive();
+    const { res, next } = await drive();
 
-    expect(res.body.quiz[0].explanation).toBe("Generated from source text");
+    expect(res.body).toBeNull();
+    expect(next).toHaveBeenCalled();
+    expect(quizCreate).not.toHaveBeenCalled();
   });
 
-  test("degrades to the fallback when the model returns a body with no content", async () => {
+  test("fails the request when the model returns a body with no content", async () => {
     setAIProvider(createMockAIProvider({ content: undefined }));
 
     const { res, next } = await drive();
 
-    // No content is indistinguishable from unusable content once parsed, so the
-    // learner gets fallback questions rather than a failed request.
-    expect(next).not.toHaveBeenCalled();
-    expect(res.body.quiz.length).toBeGreaterThan(0);
-    expect(res.body.quiz.every((q) => q.explanation === "Generated from source text")).toBe(true);
+    // No content is indistinguishable from unusable content once parsed. Both are
+    // a provider failure, and neither may be answered with invented questions.
+    expect(res.body).toBeNull();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Failed to generate questions. Please try again.",
+    }));
+    expect(quizCreate).not.toHaveBeenCalled();
   });
 
-  test("fails the request only when the fallback also cannot help", async () => {
+  test("fails the request when the extracted text cannot support any question", async () => {
     setAIProvider(createMockAIProvider({ content: undefined }));
     extractTextFromPDF.mockResolvedValue("x".repeat(600));
 
     const { res, next } = await drive();
 
+    // Unusable text used to be handed to the fallback generator, which failed
+    // with its own message. It is now a provider failure like any other.
     expect(next).toHaveBeenCalledWith(expect.objectContaining({
-      message: "Not enough meaningful content",
+      message: "Failed to generate questions. Please try again.",
     }));
     expect(quizCreate).not.toHaveBeenCalled();
     expect(res.body).toBeNull();
