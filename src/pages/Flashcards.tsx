@@ -159,7 +159,14 @@ const Flashcards = () => {
     }
   };
 
-  const review = async (rating: "hard" | "again" | "easy") => {
+  /**
+   * The four grades the learning model already supports. `good` is the neutral
+   * one: the scheduler gives it the same interval as `hard` but leaves the card's
+   * ease untouched, where `hard` lowers it and `easy` raises it *and* takes a
+   * 1.3x interval bonus. Without it a learner who recalled correctly but with
+   * hesitation had to pick between penalising the card and over-rewarding it.
+   */
+  const review = async (rating: "hard" | "again" | "good" | "easy") => {
     if (!card || !activeSetId) return;
     // In due mode `activeSetId` is the set that owns this card, which is not
     // necessarily the selected set — a due session spans decks. In normal mode
@@ -335,6 +342,9 @@ const Flashcards = () => {
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setFlipped(false)} className="border-border">
                   <RotateCcw className="mr-2 h-3.5 w-3.5" /> Reset
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => review("good")} className="border-border">
+                  Good
                 </Button>
                 <Button size="sm" onClick={() => review("easy")} className="bg-accent text-primary-foreground hover:bg-accent/90">
                   <Check className="mr-2 h-3.5 w-3.5" /> Got it

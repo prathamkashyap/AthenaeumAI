@@ -300,3 +300,89 @@ describe("ordinary browsing is unchanged", () => {
     expect(screen.queryByText(/today's review is done/i)).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The fourth grade the scheduler already supports.
+//
+// The backend accepts `good`, maps it to SM-2 quality 4 and treats it as the
+// neutral outcome: the same interval as `hard`, but without the ease penalty,
+// where `easy` gains both ease and a 1.3x interval bonus. These tests pin that
+// the UI actually exposes and submits it, rather than merely that the TypeScript
+// union knows about it.
+//
+// The easy control is labelled "Got it" in the existing UI. Its label is left
+// alone deliberately; these tests assert the rating each control *submits*, which
+// is the contract the scheduler depends on.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("all four supported ratings are exposed and submitted", () => {
+  const ratingFor = async (name: RegExp) => {
+    await renderPage({ due: true });
+    await screen.findByText("Deadlock conditions?");
+
+    fireEvent.click(screen.getByRole("button", { name }));
+    await waitFor(() => {
+      const call = apiFetch.mock.calls.find(([url]) => String(url).includes("/review"));
+      expect(call).toBeTruthy();
+    });
+    const call = apiFetch.mock.calls.find(([url]) => String(url).includes("/review"))!;
+    return JSON.parse(String((call[1] as { body: string }).body)).rating;
+  };
+
+  it("renders a control for each of the four grades", async () => {
+    await renderPage({ due: true });
+    await screen.findByText("Deadlock conditions?");
+
+    // Hard and Again are literal; easy is labelled "Got it".
+    expect(screen.getByRole("button", { name: /^hard$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^again$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^good$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /got it/i })).toBeTruthy();
+  });
+
+  it("submits good to the review endpoint", async () => {
+    expect(await ratingFor(/^good$/i)).toBe("good");
+  });
+
+  // One rating per test: the harness settles exactly two mount requests per
+  // render, so three renders in a single test would break that accounting.
+  it("still submits again for the Again control", async () => {
+    expect(await ratingFor(/^again$/i)).toBe("again");
+  });
+
+  it("still submits hard for the Hard control", async () => {
+    expect(await ratingFor(/^hard$/i)).toBe("hard");
+  });
+
+  it("still submits easy for the Got it control", async () => {
+    expect(await ratingFor(/got it/i)).toBe("easy");
+  });
+
+  it("posts good against the card's own set and card id", async () => {
+    await renderPage({ due: true });
+    await screen.findByText("Deadlock conditions?");
+
+    fireEvent.click(screen.getByRole("button", { name: /^good$/i }));
+
+    await waitFor(() => {
+      const call = apiFetch.mock.calls.find(([url]) => String(url).includes("/review"));
+      expect(call).toBeTruthy();
+    });
+    const [url, init] = apiFetch.mock.calls.find(([u]) => String(u).includes("/review"))!;
+    // Due mode ignores the selected set: this card belongs to set-a even though
+    // set-b was the pre-existing default selection.
+    expect(String(url)).toBe("/flashcards/set-a/cards/a1/review");
+    expect((init as { method: string }).method).toBe("POST");
+    expect(JSON.parse(String((init as { body: string }).body))).toEqual({ rating: "good" });
+  });
+
+  it("still advances the session after a good rating", async () => {
+    await renderPage({ due: true });
+    await screen.findByText("Deadlock conditions?");
+
+    fireEvent.click(screen.getByRole("button", { name: /^good$/i }));
+
+    // A rating advances the card exactly as the other three do; treating `good`
+    // as a no-op would stall the session.
+    expect(await screen.findByText(/Card 2 of 2/)).toBeTruthy();
+  });
+});
