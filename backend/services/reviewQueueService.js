@@ -5,7 +5,25 @@ import { recordLearningEvent } from "./learningEventService.js";
 
 const nowPlusHours = (hours) => new Date(Date.now() + hours * 60 * 60 * 1000);
 
+// A `failed_question` item is the record of one mistake made on one attempt, so
+// the attempt is part of its identity. The producer always supplies one
+// (`source.attempt: attempt._id`), and the open-item unique index already
+// includes `source.attempt` for the same reason.
+//
+// Without this guard such an item would collapse to null at the index, where a
+// second attempt's identical mistake raises E11000 -- an opaque failure for what
+// is really a missing attribution.
+const ATTEMPT_SCOPED_ITEM_TYPES = new Set(["failed_question"]);
+
 const upsertOpenQueueItem = async (item) => {
+  if (ATTEMPT_SCOPED_ITEM_TYPES.has(item.itemType) && !item.source?.attempt) {
+    const error = new Error(
+      `A ${item.itemType} review item requires source.attempt to identify the attempt it came from`
+    );
+    error.status = 422;
+    throw error;
+  }
+
   const filter = {
     user: item.user,
     itemType: item.itemType,
@@ -14,6 +32,10 @@ const upsertOpenQueueItem = async (item) => {
   };
 
   if (item.source?.quiz) filter["source.quiz"] = item.source.quiz;
+  // Part of the identity, matching the open-item unique index. Omitted when the
+  // item carries no attempt, so topic and flashcard items keep deduplicating
+  // across attempts exactly as before.
+  if (item.source?.attempt) filter["source.attempt"] = item.source.attempt;
   if (item.source?.flashcardSet) filter["source.flashcardSet"] = item.source.flashcardSet;
   if (item.source?.flashcardId) filter["source.flashcardId"] = item.source.flashcardId;
 

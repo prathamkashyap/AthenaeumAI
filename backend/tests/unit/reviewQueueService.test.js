@@ -136,6 +136,9 @@ const upserts = () => reviewQueueFindOneAndUpdate.mock.calls;
 /** The document `$set` payload of the nth upsert. */
 const upsertedItem = (index) => reviewQueueFindOneAndUpdate.mock.calls[index][1].$set;
 
+/** The match filters of the upserts issued, in order. */
+const upsertFilters = () => reviewQueueFindOneAndUpdate.mock.calls.map((call) => call[0]);
+
 afterEach(() => {
   jest.clearAllMocks();
 });
@@ -477,7 +480,11 @@ describe("upsert interaction", () => {
     expect(filter["source.flashcardId"]).toBe("c1");
   });
 
-  test("adds only the quiz id to the filter for a failed question", async () => {
+  // This test previously asserted that the filter carried the quiz id *only*.
+  // That encoded the defect this task corrects: it made the application identity
+  // for a failed question strictly narrower than the open-item unique index,
+  // which already treats `source.attempt` as part of that identity.
+  test("identifies a failed question by quiz and attempt, matching the unique index", async () => {
     await enqueueFailedQuestionItems({
       userId: USER_ID,
       quiz: { _id: "quiz-1", subject: "Operating Systems" },
@@ -486,7 +493,65 @@ describe("upsert interaction", () => {
     });
     const [filter] = reviewQueueFindOneAndUpdate.mock.calls[0];
     expect(filter["source.quiz"]).toBe("quiz-1");
-    expect(Object.keys(filter).sort()).toEqual(["itemType", "source.quiz", "status", "topic", "user"]);
+    expect(filter["source.attempt"]).toBe("attempt-1");
+    expect(Object.keys(filter).sort()).toEqual([
+      "itemType",
+      "source.attempt",
+      "source.quiz",
+      "status",
+      "topic",
+      "user",
+    ]);
+  });
+
+  test("gives two attempts on the same quiz distinct identities", async () => {
+    const enqueue = (attemptId) =>
+      enqueueFailedQuestionItems({
+        userId: USER_ID,
+        quiz: { _id: "quiz-1", subject: "Operating Systems" },
+        attempt: { _id: attemptId },
+        mistakeAnalyses: [{ questionIndex: 2, topic: "Deadlock" }],
+      });
+
+    await enqueue("attempt-1");
+    await enqueue("attempt-2");
+
+    const [firstFilter, secondFilter] = upsertFilters();
+    expect(firstFilter["source.attempt"]).toBe("attempt-1");
+    expect(secondFilter["source.attempt"]).toBe("attempt-2");
+    // Same quiz, same topic, same type -- the attempt is the only difference.
+    expect({ ...firstFilter, "source.attempt": null }).toEqual({
+      ...secondFilter,
+      "source.attempt": null,
+    });
+  });
+
+  test("gives a repeated delivery of the same attempt the same identity", async () => {
+    const enqueue = () =>
+      enqueueFailedQuestionItems({
+        userId: USER_ID,
+        quiz: { _id: "quiz-1", subject: "Operating Systems" },
+        attempt: { _id: "attempt-1" },
+        mistakeAnalyses: [{ questionIndex: 2, topic: "Deadlock" }],
+      });
+
+    await enqueue();
+    await enqueue();
+
+    const [firstFilter, secondFilter] = upsertFilters();
+    expect(secondFilter).toEqual(firstFilter);
+  });
+
+  test("rejects a failed question that arrives with no attempt to attribute it to", async () => {
+    await expect(
+      enqueueFailedQuestionItems({
+        userId: USER_ID,
+        quiz: { _id: "quiz-1", subject: "Operating Systems" },
+        attempt: {},
+        mistakeAnalyses: [{ questionIndex: 2, topic: "Deadlock" }],
+      })
+    ).rejects.toThrow(/requires source\.attempt/);
+    expect(reviewQueueFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test("requests an upsert that returns the updated document", async () => {
