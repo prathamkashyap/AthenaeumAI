@@ -158,7 +158,7 @@ arithmetic without a database, and the local copy exists for that reason.
 | Easy bonus `× 1.3` | yes (`:31`) | yes, **relatively only** | `:118-132` compares `easy > good` |
 | `hard` behaviour (quality 3, enters the repetition branch) | yes (`:11`) | partially | `:64-78` covers increment and first interval only; no test distinguishes `hard` from `good` on the interval ladder |
 | `again` → interval 0 vs other low score → 1 day | yes (`:24`) | yes | `:46-49` covers `again` only; the "other low score → 1 day" branch is unreachable via the public rating map and is untested |
-| Next-review date calculation (`now + interval × 24h`) | **no** | **no** | the copy returns only `{ nextEase, nextRepetitions, nextInterval }`; `flashcardService.js:197` is never executed |
+| Next-review date calculation (`now + interval × 24h`) | Not applicable — the suite now imports the production function instead of mirroring the arithmetic | **yes** | `flashcardService.test.js` calls the real `applySpacedRepetitionReview`, which computes and persists `nextReviewAt`. No real database stands behind the date assertion. |
 | Persisted card fields (9 fields, 3 alias pairs) | **no** | **no** | `:199-207` is inside the unexecuted production function |
 | Seed state in `normalizeCardsForScheduling` | **no** | **no** | `flashcardService.js:10-24` is not mirrored |
 | 404 branches for missing set / missing card | **no** | **no** | `:156-169` is not mirrored |
@@ -270,11 +270,11 @@ any test in the repository.
 
 | Production area | Direct unit test | Integration coverage | E2E coverage | Coverage quality | Gap |
 | --------------- | ---------------- | -------------------- | ------------ | ---------------- | --- |
-| `progressService.js` | None. No test imports it. | None. `updateUserProgressFromAttempt` is called only by the worker, and no test enqueues `SYNC_ATTEMPT`. | None | 0.00% functions. The 13.09% statement figure is module-level declarations only. | `updateUserProgressFromAttempt`, `updateStudyStreak`, and all three private formulas (`computeWeightedMastery`, `computeWeaknessScore`, `recencyScoreFor`, `difficultyDeltaFor`) are never executed by any test. |
-| `flashcardService.js` | **Re-implementation only** (`flashcardService.test.js`). | None. | None | 0.00% functions. | `applySpacedRepetitionReview` never executed. `createFlashcardSet`, `getDueFlashcards` never executed. |
-| `analyticsService.js` | **Re-implementation only** (`analyticsService.test.js`). | Route-level only, and see the §6.1 finding — the authenticated dashboard request is skipped at runtime. | None | 0.00% functions. | `getDashboardAnalytics` body never executed. |
-| `reviewQueueService.js` | **Re-implementation only** (`reviewQueueService.test.js`). | Indirectly reached by the worker's `REBUILD_REVIEW_QUEUE`, which asserts only the job result, not the items. | None | 0.00% functions. | `upsertOpenQueueItem`, `enqueueFailedQuestionItems`, `listReviewQueue`, `completeReviewQueueItem`, `snoozeReviewQueueItem` bodies never executed. |
-| `learningEventService.js` | None. | Indirectly reached by `recordLearningEvent` from the tutor and review-queue paths. | None | 20% statements, **0.00% functions**. | `recordLearningEvent` and `recordAttemptEvents` never executed. |
+| `progressService.js` | **Direct, with stubbed models** — `attemptProcessing.test.js` drives `updateUserProgressFromAttempt` and `updateStudyStreak` through the real worker path. | **Yes** — `attemptSyncTransaction.test.js` runs the same code against a real replica-set transaction and real models, including the rollback case. | None | Prior measurement, predates current code: 0.00% functions, 13.09% statements. Not re-measured. | All the private formulas (`computeWeightedMastery`, `computeWeaknessScore`, `recencyScoreFor`, `difficultyDeltaFor`) execute in both suites. No E2E drives this module. |
+| `flashcardService.js` | **Direct** — `flashcardService.test.js` imports the real module (only the FlashcardSet model is stubbed); `flashcardMistakes`, `flashcardGenerateWeakTopic` and `flashcardGenerateRoute` drive `createFlashcardSet`. | None | `flashcardsDueReview.test.tsx` covers the review UI and the submitted rating | Prior measurement, predates current code: 0.00% functions. Not re-measured. | `applySpacedRepetitionReview`, `createFlashcardSet` and `getDueFlashcards` all execute. `getDueFlashcards` runs only against stubbed models. |
+| `analyticsService.js` | **Direct** — `analyticsService.test.js` imports the real module and mocks only the five models, so the body executes. | Route-level only, and see the §6.1 finding — the authenticated dashboard request is skipped at runtime. | None | Prior measurement, predates current code: 0.00% functions. Not re-measured. | `getDashboardAnalytics` body executes against stubbed models. The §6.1 runtime skip is unchanged. |
+| `reviewQueueService.js` | **Direct** — `reviewQueueService.test.js` imports the real module and mocks only models. | Indirectly reached by the worker, and by `backgroundJobRetry.test.js` through a real retry delivery. | None | Prior measurement, predates current code: 0.00% functions. Not re-measured. | `upsertOpenQueueItem`, `enqueueFailedQuestionItems`, `listReviewQueue`, `completeReviewQueueItem` and `snoozeReviewQueueItem` all execute against stubbed models; none runs against a real collection. |
+| `learningEventService.js` | **Direct** — `attemptSyncTransaction.test.js` stubs the module but delegates to the real `recordAttemptEvents`, so it writes real rows inside the real transaction. | **Yes** — same suite, against a real database. | None | Prior measurement, predates current code: 20% statements, **0.00% functions**. Not re-measured. | Both `recordAttemptEvents` (real database) and `recordLearningEvent` (via `reviewQueueService.test.js`, stubbed model) execute. |
 | `topicNormalizationService.js` | **Direct** — 28 cases. | Indirectly reached by the progress path. | None | **100% statements, branches, functions.** | None for this module. |
 | `recommendationService.js` | None. | None — no test mounts `recommendationRoutes`, and no test calls `GET /recommendations/dashboard`. | None | **0.00% across all metrics.** | `getRecommendationSnapshot` and `recordRecommendationFollowed` never executed, including the `void jobQueue.enqueue` fire-and-forget path at `:37-47`. |
 
@@ -284,11 +284,11 @@ any test in the repository.
 | --------------- | ---------------- | -------------------- | ------------ | ---------------- | --- |
 | `aiQuizService.js` | **Partial** — `quizService.test.js` and `quizGenerationController.test.js` drive `generateQuizFromAI` against a stubbed provider; the flashcard, mistake-analysis and tutor suites replace the whole module. | Module is loaded transitively by route import, so module-level declarations count. | None | Prior measurement, predates the current code: 14.56% statements, **0.00% functions.** Not re-measured. | `generateQuizFromAI` **is** executed, via `generateQuiz` (`quizService.js:36`); those suites stub the provider rather than this module. `generateFlashcardsFromAI`, `generateMistakeAnalysesFromAI`, `generateTutorResponseFromAI`, `getGroqClient`, and all prompt builders are never executed. |
 | `quizService.js` | **Direct** — `tests/unit/quizService.test.js` and `tests/unit/quizGenerationController.test.js` (97 tests across the quiz-generation suites). | Loaded transitively by the route import; the live upload route calls `generateQuiz` (`quizController.js:117`). | `tests/e2e/async-job-lifecycle.spec.ts` submits a PDF and asserts the generated quiz and its tracked job. | Prior measurement, predates the current code: 6.57% statements, 0.00% functions. Not re-measured. | `generateQuiz`, `isSimilar`, `removeSimilar` and `scoreQuestion` are all executed, by the unit suites and by the live upload route. `fallbackQuizGenerator` was removed in `cd65a23`; quiz generation now raises `AIServiceError` (HTTP 502) instead of synthesising questions. `seedDefaultQuizzes`, the only other caller, is never invoked. |
-| `mistakeAnalysisService.js` | None. | None. | None | 11.76% statements, 0.00% functions. | `analyzeMistakesForAttempt` and `fallbackAnalysis` never executed. |
-| `streamingTutorService.js` | None. | None. | None | **0.00% across all metrics.** | `streamTutorResponse` never executed. The E2E tutor mock intercepts the HTTP route, so this module is never reached even in E2E. |
-| `tutorService.js` | None. | None — `tutorRoutes` is not mounted by `api.test.js`. | None — mocked at the browser layer. | **0.00% across all metrics.** | `gatherTutorContext` and `askContextualTutor` never executed, including the retrieval branch. |
+| `mistakeAnalysisService.js` | **Direct** — `mistakeAnalysisService.test.js` imports the real module with zero mocks and drives `analyzeMistakesForAttempt`. | Indirectly reached from the worker's `SYNC_ATTEMPT` path. | None | Prior measurement, predates current code: 11.76% statements, 0.00% functions. Not re-measured. | `analyzeMistakesForAttempt` and `fallbackAnalysis` both execute, the latter on the provider-failure branch. |
+| `streamingTutorService.js` | **Direct** — `streamingTutorService.test.js` has zero mocks and calls `streamTutorResponse` directly. | None | The E2E tutor mock still intercepts the HTTP route, so this module is not reached in E2E. | Prior measurement, predates current code: **0.00% across all metrics.** Not re-measured. | Unit-covered. The streaming endpoint has no frontend caller. |
+| `tutorService.js` | **Direct** — `tutorService.test.js` imports the real module, mocking only models, `learningEventService` and `aiQuizService`. | None — `tutorRoutes` is not mounted by `api.test.js`. | None — mocked at the browser layer. | Prior measurement, predates current code: **0.00% across all metrics.** Not re-measured. | `gatherTutorContext` and `askContextualTutor` execute, including the retrieval branch, but against a stubbed chunk store and a stubbed provider — so grounding is asserted structurally, not against real retrieved chunks. |
 | `utils/qualityFilter.js` | **Direct** — 25 cases. | None. | None | 94.44% statements, 94.11% branches, 100% functions. | Well covered as a module. Noted in §5 note: it is **not on the live quiz path**, so its coverage does not represent covered user-facing behaviour. |
-| `utils/pdfParser.js` | None. | None. | None | 10% statements, 0.00% functions, 100% branches. | `extractTextFromPDF` never executed by any suite. Its `try`/`catch` is the only branch, hence 100% branch with 0% function coverage. |
+| `utils/pdfParser.js` | None — stubbed wherever a controller test needs it. | None | **Yes** — `async-job-lifecycle.spec.ts` uploads a real PDF, so extraction runs. | Prior measurement, predates current code: 10% statements, 0.00% functions, 100% branches. Not re-measured. | `extractTextFromPDF` executes in E2E only. Its `try`/`catch` is the only branch, hence the historical 100% branch figure. |
 
 ### Retrieval
 
@@ -421,7 +421,7 @@ real `Worker(BACKGROUND_QUEUE_NAME, processBackgroundJob, { concurrency: 1 })` a
 | Resulting database mutations? | **Yes, for `INDEX_MATERIAL` only** | `:98-101` asserts one `MaterialChunk` document, a 384-length `embedding`, and `metadata.indexedAt`. |
 | Queue dedup? | **Yes** | `:107-126` pauses the queue, enqueues the same `REBUILD_REVIEW_QUEUE` payload twice with an identical `deduplicationId`, and asserts `duplicate.id === first.id`. |
 | Retry / failure handling? | **Yes, genuinely** | `:128-145` enqueues an unknown job type with an explicit `attempts: 2` and `backoff: { type: "fixed", delay: 25 }`, then asserts the promise rejects with `"Unknown background job type"`, that `attemptsMade === 2`, that `failedReason` contains the message, and that the record appears in `getFailed()`. This is not a configuration claim — the failure is observed. |
-| `SYNC_ATTEMPT` processing? | **No.** No test enqueues it. | The handler at `worker.js:66-98` is never reached, so `updateUserProgressFromAttempt`, `recordAttemptEvents`, and `enqueueFailedQuestionItems` are never executed by this suite. |
+| `SYNC_ATTEMPT` processing? | **Yes, at every level.** | `attemptProcessing.test.js` drives the handler with the transaction and models stubbed; `attemptSyncTransaction.test.js` runs it against a real replica-set transaction (first application, duplicate refusal, mid-transaction rollback); `backgroundJobRetry.test.js` drives a real retry delivery; `async-job-lifecycle.spec.ts` submits attempts in E2E. |
 | `REBUILD_REVIEW_QUEUE` result contents? | **No.** Only the job result is asserted, not the queue items. | `:120-122` asserts `toMatchObject({ type: "REBUILD_REVIEW_QUEUE" })`. Nothing inspects `ReviewQueue` documents. |
 | Worker lifecycle (construction, `concurrency: 5`, `QueueEvents`, graceful shutdown)? | **No.** | The test imports `processBackgroundJob` only, never `startWorker` (`worker.js:109-155`). |
 | Attempt-ownership re-check in the worker? | **No.** | `worker.js:79-81` is inside `SYNC_ATTEMPT`, never reached. |
@@ -461,9 +461,9 @@ Both facts are recorded here as observations about current behaviour. Neither wa
 | ------- | --------- | ---------------- | -------- | ------------------- | -------------- |
 | `generateQuizFromAI` (`aiQuizService.js:279-356`) | **Direct**, indirectly — `quizService.test.js` and `quizGenerationController.test.js` reach it through `generateQuiz`. | Reached by the live upload route (`quizController.js:117`). | `tests/e2e/async-job-lifecycle.spec.ts` posts a PDF to `/quiz/generate`. | **Yes**, at runtime | Covered at the function level, but only against a stubbed provider, so its prompt construction is asserted indirectly rather than pinned to real provider output. |
 | `generateTutorResponseFromAI` (`aiQuizService.js:482-563`) | None | None — `tutorRoutes` not mounted | None — the E2E tutor test mocks the HTTP route | **Yes**, at runtime | **Untested.** |
-| `streamTutorResponse` (`streamingTutorService.js:16-86`) | None | None | None | **Yes**, at runtime | **Untested.** 0.00% across all metrics. |
-| `generateMistakeAnalysesFromAI` (`aiQuizService.js:414-480`) | None | None — `saveAttempt` never invoked | None | **Yes**, at runtime | **Untested.** |
-| `analyzeMistakesForAttempt` (`mistakeAnalysisService.js:19-55`) | None | None | None | **Yes**, at runtime | **Untested.** |
+| `streamTutorResponse` (`streamingTutorService.js:16-86`) | **Direct** — `streamingTutorService.test.js` has zero mocks and calls it. | None | None — the streaming endpoint has no frontend caller | **Yes**, at runtime | Unit-covered. Prior measurement, predates current code: **0.00% across all metrics.** Not re-measured. |
+| `generateMistakeAnalysesFromAI` (`aiQuizService.js:414-480`) | **Indirect** — reached by the real `analyzeMistakesForAttempt`, with the provider stubbed at the seam. | None | None | **Yes**, at runtime | Reached, but only against a stubbed provider, so prompt construction is not pinned to real provider output. |
+| `analyzeMistakesForAttempt` (`mistakeAnalysisService.js:19-55`) | **Direct** — `mistakeAnalysisService.test.js`, zero mocks. | Indirectly reached from the worker's `SYNC_ATTEMPT` path. | None | **Yes**, at runtime | Covered directly, including the per-item fallback branch. |
 | `generateFlashcardsFromAI` (`aiQuizService.js:358-412`) | None | None — `generateFlashcardSet` never invoked | None | **Yes**, at runtime | **Untested.** |
 | `getGroqClient` (`aiQuizService.js:9-17`, `streamingTutorService.js:6-14`) | None | None | None | — | **Untested.** No test constructs a Groq client, valid or invalid. |
 | Prompt builders (`buildPrompt`, `getDefaultCognitiveLevel`, `VALID_COGNITIVE_LEVELS`) | None | None | None | no | **Untested**, except that `getDefaultCognitiveLevel` and `VALID_COGNITIVE_LEVELS` are exported and therefore not covered. |
@@ -598,9 +598,10 @@ requires a textarea whose placeholder contains `Ask`, and the button `Ask Tutor`
 present in `src/pages/Tutor.tsx`. **No expectation mismatch was found in the E2E spec against
 the current frontend.**
 
-**No E2E test covers:** quiz generation, PDF upload, attempt submission, mistake analysis,
-flashcards, analytics dashboards, the review queue, the library UI beyond an empty-list check,
-or the streaming tutor route.
+**No E2E test covers:** mistake analysis, flashcards, analytics dashboards, the review queue,
+the library UI beyond an empty-list check, or the streaming tutor route.
+(`async-job-lifecycle.spec.ts` does now cover PDF upload, quiz generation and attempt
+submission, so those were removed from this list.)
 
 ---
 
@@ -735,19 +736,22 @@ Each gap below is a direct consequence of the inventory above.
 
 **Learning core**
 
-1. `applySpacedRepetitionReview` (`flashcardService.js:147-211`) is never executed by any test.
-   `flashcardService.test.js` re-creates the arithmetic and imports nothing. The suite would
-   pass if the production function were deleted.
-2. `getDashboardAnalytics` (`analyticsService.js:15-186`) is never executed.
-   `analyticsService.test.js` re-creates seven helpers and imports nothing.
-3. `rebuildReviewQueueForUser`, `upsertOpenQueueItem`, `enqueueFailedQuestionItems`,
-   `listReviewQueue`, `completeReviewQueueItem`, and `snoozeReviewQueueItem` are never executed.
-   `reviewQueueService.test.js` re-creates five item builders, omits the topic filter, the
-   12-item cap, the `failed_question` construction, the listing sort order, and the completion
-   path.
-4. `updateUserProgressFromAttempt` and `updateStudyStreak` (`progressService.js:51, 141`) are
-   never executed. No test enqueues `SYNC_ATTEMPT`, so the worker handler at `worker.js:66-98`
-   is never entered.
+1. ~~`applySpacedRepetitionReview` (`flashcardService.js:147-211`) is never executed by any
+   test.~~ **Resolved.** `flashcardService.test.js` now imports the production function and
+   exercises it, including the per-rating ease, interval and repetition outcomes; the suite
+   would no longer pass if the function were deleted.
+2. ~~`getDashboardAnalytics` (`analyticsService.js:15-186`) is never executed.~~ **Resolved.**
+   `analyticsService.test.js` imports the production module and executes the body against
+   stubbed models.
+3. ~~`rebuildReviewQueueForUser`, `upsertOpenQueueItem`, `enqueueFailedQuestionItems`,
+   `listReviewQueue`, `completeReviewQueueItem`, and `snoozeReviewQueueItem` are never
+   executed.~~ **Resolved.** `reviewQueueService.test.js` imports the production module and
+   exercises all six against stubbed models. They still do not run against a real collection.
+4. ~~`updateUserProgressFromAttempt` and `updateStudyStreak` (`progressService.js:51, 141`)
+   are never executed, because no test enqueues `SYNC_ATTEMPT`.~~ **Resolved.**
+   `attemptProcessing.test.js` drives both through the real worker path, and
+   `attemptSyncTransaction.test.js` additionally runs them inside a real transaction,
+   including the rollback case that discards the earlier writes.
 5. `getRecommendationSnapshot` (`recommendationService.js:20-160`) is never executed; the file
    is at 0.00% across all metrics and no test mounts `recommendationRoutes`.
 6. The two divergent readiness/retention formulas in `analyticsService.js:117, 121` and
