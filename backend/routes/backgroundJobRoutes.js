@@ -1,5 +1,8 @@
 import express from "express";
-import { getBackgroundJobStatus } from "../controllers/backgroundJobController.js";
+import {
+  getBackgroundJobStatus,
+  retryBackgroundJob,
+} from "../controllers/backgroundJobController.js";
 import { requireAuth } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -9,5 +12,6 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.get("/:id", getBackgroundJobStatus);
+router.post("/:id/retry", retryBackgroundJob);
 
 export default router;

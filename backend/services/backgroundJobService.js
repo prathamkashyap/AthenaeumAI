@@ -64,6 +64,50 @@ export const markJobFailed = async (jobId, { code = "JOB_FAILED", message = "Bac
     $set: { status: "failed", completedAt: new Date(), error: { code, message } },
   });
 
+/** The statuses a learner is allowed to ask to have re-run. */
+export const RETRYABLE_BACKGROUND_JOB_STATUS = Object.freeze(["failed", "not_scheduled"]);
+
+/**
+ * Claims a terminal job for a retry, returning it to `pending`.
+ *
+ * This is the one transition that deliberately does not use `conditionalUpdate`,
+ * because that helper only matches open statuses and a terminal job matches none
+ * of them. The terminal statuses are named explicitly instead of being opened up,
+ * so `pending`, `queued`, `running` and `completed` all remain unclaimable and the
+ * guard on every other transition is untouched.
+ *
+ * The conditional match is also the concurrency boundary. Two retries racing for
+ * the same job cannot both win: the first moves the record to `pending`, and the
+ * loser's filter no longer matches because `pending` is not retryable. A
+ * pre-check in the caller would not be sufficient on its own, since two requests
+ * could both pass it before either wrote.
+ *
+ * `pending` is reused rather than inventing a retry-specific status because it
+ * already means exactly this: the record exists and nothing has claimed it. That
+ * lets the ordinary `markJobQueued` / `markJobNotScheduled` transitions finish
+ * the lifecycle unchanged.
+ *
+ * `completedAt` is cleared because it carries the retention TTL index: a job that
+ * is queued again must not still be scheduled for deletion. `error` is cleared so
+ * a re-run does not keep reporting the previous attempt's cause, and
+ * `startedAt`/`queueJobId` are cleared so nothing implies a delivery is in
+ * flight before one exists.
+ */
+export const claimTerminalJobForRetry = (jobId) =>
+  BackgroundJob.findOneAndUpdate(
+    { _id: jobId, status: { $in: [...RETRYABLE_BACKGROUND_JOB_STATUS] } },
+    {
+      $set: {
+        status: "pending",
+        error: { code: null, message: null },
+        completedAt: null,
+        startedAt: null,
+        queueJobId: null,
+      },
+    },
+    { new: true },
+  );
+
 /**
  * Reads a job for its owner.
  *
