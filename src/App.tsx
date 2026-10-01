@@ -13,7 +13,6 @@ import NotFound from "./pages/NotFound.tsx";
 import { Loader2 } from "lucide-react";
 
 // Lazy-loaded routes for better initial load performance
-const Quiz = lazy(() => import("./pages/Quiz.tsx"));
 const Flashcards = lazy(() => import("./pages/Flashcards.tsx"));
 const UploadPage = lazy(() => import("./pages/Upload.tsx"));
 const Analytics = lazy(() => import("./pages/Analytics.tsx"));
@@ -56,8 +55,6 @@ const App = () => (
                       <Route path="/assessments/:id/result" element={<ResultAssessment />} />
                       <Route path="/practice" element={<Flashcards />} />
                       <Route path="/flashcards" element={<Flashcards />} />
-                      <Route path="/question-bank" element={<Quiz />} />
-                      <Route path="/quiz" element={<Quiz />} />
                       <Route path="/review" element={<TodaysReview />} />
                       <Route path="/analytics" element={<Analytics />} />
                       <Route path="/tutor" element={<Tutor />} />

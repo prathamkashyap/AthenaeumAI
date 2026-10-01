@@ -14,7 +14,6 @@ const mainNav = [
   { title: "Practice", url: "/practice", icon: Layers },
   { title: "Today's Review", url: "/review", icon: CalendarCheck },
   { title: "AI Tutor", url: "/tutor", icon: Bot },
-  { title: "Question Bank", url: "/question-bank", icon: ScrollText },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
 
