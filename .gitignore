@@ -24,6 +24,9 @@ coverage/
 
 backend/.env
 backend/.env.*
+# The template is not a secret and is referenced by the documented setup
+# (`cp backend/.env.example backend/.env`), so it must stay committable.
+!backend/.env.example
 
 # ==================================================
 # Logs
