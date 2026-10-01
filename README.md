@@ -161,7 +161,7 @@ sequenceDiagram
 
 ### Adaptive Learning Pipeline
 
-1. **Attempt Submission** — User answers are validated and persisted atomically via Mongoose transactions.
+1. **Attempt Submission** — User answers are validated and the attempt is persisted first; the learner effects it implies are then applied by a background job inside a Mongoose transaction, guarded by a durable per-attempt claim so a redelivery applies them once.
 2. **Background Sync** — A BullMQ job updates `UserProgress` per-topic mastery, records `LearningEvents`, and triggers mistake analysis for incorrect answers.
 3. **Decay Calculation** — The analytics engine applies exponential decay to per-topic confidence based on time since last practice.
 4. **Review Queue** — The recommendation service re-ranks topics by weakness score and populates the review queue with overdue flashcards and low-confidence topics.

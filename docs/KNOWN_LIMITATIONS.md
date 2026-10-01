@@ -50,7 +50,7 @@ This document lists the architectural limitations of the current AthenaeumAI pla
   "backgroundProcessing": { "status": "not_scheduled", "task": "INDEX_MATERIAL" }
   ```
   The success path is unchanged and carries no such field. Genuine failures before the commit — a database write, a missing quiz, an unavailable database, or any non-queue fault while scheduling — are still reported as failures.
-- **Impact**: The response is truthful, but the background work genuinely has not run. Material indexing for an unscheduled job, and learner analytics/review-queue rebuild for an unscheduled attempt, require **operational recovery that is not yet automated**. There is no job-status endpoint, no transactional outbox, no automatic rescheduling, and no HTTP idempotency key.
+- **Impact**: The response is truthful, but the background work genuinely has not run. Material indexing for an unscheduled job, and learner analytics/review-queue rebuild for an unscheduled attempt, require **operational recovery that is not yet automated**. A tracked job record *is* readable afterwards at `GET /api/v1/jobs/:id` (see the next section), but there is no transactional outbox, no automatic rescheduling, and no HTTP idempotency key.
 - **Known residual risk**: because there is no request-level idempotency, a client that retries after a scheduling failure will create a *second* quiz or a *second* attempt. `SYNC_ATTEMPT` remains safe against duplicate *processing* (`829a226` durable claim on `QuizAttempt._id`), but it cannot prevent duplicate *submission*. Closing this needs the explicit job-status/idempotency contract, not a change to the queue.
 
 ---

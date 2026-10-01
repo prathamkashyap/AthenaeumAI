@@ -167,7 +167,7 @@ There are exactly three job types, three enqueue sites, and one worker dispatch 
 | Processor | `backend/worker.js:66-98` |
 | Work performed | Loads attempt + quiz; re-validates `String(attempt.user) !== String(userId)` (`worker.js:79-81`); then `updateUserProgressFromAttempt` → `recordAttemptEvents` → `enqueueFailedQuestionItems` (if `score < total`) → `rebuildReviewQueueForUser` |
 | Retry | 3 attempts, exponential backoff 2s |
-| Idempotency | **Not idempotent.** `updateUserProgressFromAttempt` performs `progress.totals.quizzesTaken += 1`, `questionsAnswered += attempt.total`, `correctAnswers += attempt.score` (`progressService.js:58-60`) and per-topic `attempted += 1`, `correct += …`, `reviewCount += 1` (`progressService.js:85-87`). Any redelivery after a partial failure double-counts. BullMQ `deduplication.id` collapses concurrent duplicates within the dedup window; it does not protect against retry redelivery. `LearningEvent` rows are re-inserted on each run (`learningEventService.js:50`) — the schema is append-only with no uniqueness key. |
+| Idempotency | **Idempotent for its transactional effects; convergent for the rest.** `syncAttemptOnce` takes a conditional per-attempt claim inside `runInTransaction` (`worker.js:59-63`) and applies `updateUserProgressFromAttempt` and `recordAttemptEvents` in that same transaction (`worker.js:72-81`), so a failure anywhere inside rolls the claim back together with the progress writes already issued. A redelivery whose claim already committed reapplies nothing. `enqueueFailedQuestionItems` and `rebuildReviewQueueForUser` deliberately sit *after* the commit and are replayed on every delivery (`worker.js:164-170`, `:179`, `:193`), converging because the queue is written by upsert (`reviewQueueService.js:8-25`). Exercised against a real replica set by `backend/tests/integration/attemptSyncTransaction.test.js`. This is duplicate-*processing* protection only: it does nothing about a client submitting a second attempt. |
 | Failure mode | The attempt is already committed when the job is enqueued, so a terminal job failure leaves progress permanently out of sync with the attempt. |
 
 #### `REBUILD_REVIEW_QUEUE`
@@ -512,7 +512,7 @@ multer filter is dead as written. Size cap is 10MB in both places
 | Review queue rebuild is available as a synchronous HTTP path | `Implemented` | `POST /api/v1/review-queue/rebuild` calls `rebuildReviewQueueForUser` directly and awaits the full result (`reviewQueueController.js:20-27`). Two independent paths exist. | Source trace only. |
 | Material indexing can also run synchronously on the tutor read path | `Implemented` | `searchMaterialChunks` calls `ensureChunksForUser` on every query (`embeddingService.js:179`, `:141-160`), which chunks, hashes, and `bulkWrite`s any unindexed material inside the request. `POST /tutor/materials/:id/reindex` is a second synchronous entry (`tutorController.js:33-56`). | Source trace only. |
 | Background jobs retry on failure | `Implemented` | `attempts: 3`, `backoff: { type: "exponential", delay: 2000 }`, `removeOnFail: { count: 500, age: 30d }` (`jobQueue.js:11-17`); caller overrides supported at `:56-62`. | `bullmq.test.js:128-145` asserts `attemptsMade === 2` under an explicit `attempts: 2` override and that the failed record is retained — passed in command 5. |
-| Background jobs are idempotent under retry | `Partial` | `INDEX_MATERIAL` is convergent (upsert on `(user, studyMaterial, chunkIndex)` + prune, `embeddingService.js:98-134`). `REBUILD_REVIEW_QUEUE` converges for unchanged inputs but never removes stale items (`reviewQueueService.js:8-25`). `SYNC_ATTEMPT` is **not** idempotent: `progressService.js:58-60, 85-87` increments counters unconditionally and `learningEventService.js:50` re-inserts events on every redelivery. BullMQ `deduplication.id` collapses concurrent duplicates only. | Source trace only. |
+| Background jobs are idempotent under retry | `Partial` | `INDEX_MATERIAL` is convergent (upsert on `(user, studyMaterial, chunkIndex)` + prune, `embeddingService.js:98-134`). `REBUILD_REVIEW_QUEUE` converges for unchanged inputs but never removes stale items (`reviewQueueService.js:8-25`). `SYNC_ATTEMPT` claims the attempt conditionally inside `runInTransaction` (`worker.js:59-63`) and applies its progress and learning-event writes in that transaction (`worker.js:72-81`), so it is idempotent for those effects and rolls them back together on failure; its post-commit review-queue effects are replayed on redelivery and converge via upsert (`worker.js:164-170`). BullMQ `deduplication.id` collapses concurrent duplicates only. | `backend/tests/integration/attemptSyncTransaction.test.js` — first application, duplicate refusal, and mid-transaction rollback against a real replica set. |
 | A worker process runs independently of the API | `Implemented` | `startWorker` guarded by `isMainModule` (`worker.js:157-164`); `server.js` does not import or start it. | Source trace only. |
 
 ### 3.2 Retrieval claims
@@ -631,17 +631,24 @@ Factual statements about what the current code implies for the rework. No action
 1. **Documentation should distinguish asynchronous indexing from synchronous PDF extraction and
    quiz generation.** Three separate stages of the upload path have three different execution
    models, and the current documentation collapses them into one "asynchronous pipeline" claim.
-2. **`SYNC_ATTEMPT` is the only background job that mutates cumulative counters, and it is not
-   idempotent.** Any reliability work on that job type has to account for
-   `progressService.js:58-60, 85-87` and the un-deduplicated `LearningEvent` insert at
-   `learningEventService.js:50`. `INDEX_MATERIAL` and `REBUILD_REVIEW_QUEUE` are already
-   convergent or upsert-based.
-3. **Two enqueue failure policies coexist.** `INDEX_MATERIAL` and `SYNC_ATTEMPT` are awaited and a
-   `QueueEnqueueError` propagates as a client error — but the quiz and attempt are already
-   committed by then (`quizController.js:78-102` and `:260-280` run before the enqueues at `:105`
-   and `:282`), so the client sees a 500 for work that succeeded. `REBUILD_REVIEW_QUEUE` swallows
-   the same error (`recommendationService.js:42-47`). The API has no job-status surface for a
-   client to check afterwards; `/health` exposes raw BullMQ counts only (`healthRoutes.js:36-42`).
+2. **`SYNC_ATTEMPT` is the only background job that mutates cumulative counters, and it is now
+   guarded rather than naive.** Its cumulative writes run under a conditional per-attempt claim
+   inside `runInTransaction` (`worker.js:59-63`, `:72-81`), so a redelivery applies them once and
+   a mid-transaction failure undoes them with the claim. Its review-queue effects sit after that
+   commit and are replayed and convergent. What reliability work still has to account for is the
+   boundary *above* the job: a client that resubmits creates a second attempt, because there is no
+   request-level idempotency key, and a job left `not_scheduled` or terminally `failed` is never
+   requeued. `INDEX_MATERIAL` and `REBUILD_REVIEW_QUEUE` remain convergent or upsert-based.
+3. **Two enqueue failure policies coexist, and neither one is a client error any more.** For
+   `INDEX_MATERIAL` and `SYNC_ATTEMPT` the business record is committed first, then the enqueue is
+   attempted, and only a `QueueEnqueueError` is absorbed: the endpoint returns its normal 200 plus
+   `backgroundProcessing.status: "not_scheduled"` (`quizController.js:36-75`). Any other fault is
+   rethrown, so a real bug is never disguised as a scheduling problem.
+   `REBUILD_REVIEW_QUEUE` swallows the same error and only logs it
+   (`recommendationService.js:42-47`). A client *can* check afterwards — `GET /api/v1/jobs/:id`
+   returns the tracked job — but that is visibility, not recovery: nothing re-enqueues a
+   `not_scheduled` or terminally `failed` job, and there is no reconciliation pass. `/health`
+   exposes raw BullMQ counts only (`healthRoutes.js:36-42`).
 4. **Retrieval quality claims must be scoped to the tokenizer.** `local-hash-v1` produces
    non-zero similarity only for shared exact tokens (or hash-bucket collisions). Any statement that
    the retriever "understands" a query is unsupported by the implementation. The existing
