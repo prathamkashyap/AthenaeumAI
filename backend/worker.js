@@ -137,32 +137,46 @@ export const processBackgroundJob = async (job) => {
       throw new Error(`Quiz attempt ${attemptId} does not belong to user ${userId}.`);
     }
 
-    // Cheap pre-check that keeps a redelivery from opening a transaction. It is
-    // only an optimisation: the claim inside syncAttemptOnce is the correctness
-    // boundary, so a stale read here can never skip an unapplied attempt.
-    if (isAttemptSynced(attempt)) {
-      return {
-        type,
-        attemptId: String(attemptId),
-        quizId: String(quizId),
-        applied: false,
-        duplicate: true,
-      };
-    }
-
     // Mistake analysis calls the AI provider, so it runs before the transaction
     // rather than inside it.
-    let mistakeAnalyses = attempt.mistakeAnalyses?.length ? attempt.mistakeAnalyses : null;
-    if (!mistakeAnalyses && attempt.score < attempt.total) {
-      mistakeAnalyses = await analyzeMistakesForAttempt({
+    const resolveMistakeAnalyses = async () => {
+      if (attempt.mistakeAnalyses?.length) return attempt.mistakeAnalyses;
+      if (attempt.score >= attempt.total) return null;
+      return analyzeMistakesForAttempt({
         quiz,
         normalizedAnswers: attempt.answers,
         limit: 5,
       });
-    }
+    };
 
-    const applied = await syncAttemptOnce({ attempt, quiz, userId });
-    if (!applied) {
+    /**
+     * The review-queue effects that necessarily sit *after* the commit.
+     *
+     * They are deliberately not transactional: a redelivery must never redo the
+     * claim. That separation is also why they cannot simply be assumed to have
+     * run. The durable claim asserts that the learning effects committed, not
+     * that these did, so a worker that dies between the commit and here leaves
+     * the queue incomplete while the attempt still reads as fully applied.
+     * Replaying them on every delivery closes that window, and converges rather
+     * than accumulating, because the queue is written by upsert and the rebuild
+     * is recomputed from progress.
+     */
+    const applyPostCommitReviewQueueEffects = async (mistakeAnalyses) => {
+      if (mistakeAnalyses) {
+        await enqueueFailedQuestionItems({ userId, quiz, attempt, mistakeAnalyses });
+      }
+      await rebuildReviewQueueForUser(userId);
+    };
+
+    // Cheap pre-check that keeps a redelivery from opening a transaction. It is
+    // only an optimisation: the claim inside syncAttemptOnce is the correctness
+    // boundary, so a stale read here can never skip an unapplied attempt.
+    //
+    // Returning early is not sufficient on its own. The effects that follow the
+    // commit are outside the transaction, so "already processed" is not evidence
+    // that they ran.
+    if (isAttemptSynced(attempt)) {
+      await applyPostCommitReviewQueueEffects(await resolveMistakeAnalyses());
       return {
         type,
         attemptId: String(attemptId),
@@ -172,10 +186,21 @@ export const processBackgroundJob = async (job) => {
       };
     }
 
-    if (mistakeAnalyses) {
-      await enqueueFailedQuestionItems({ userId, quiz, attempt, mistakeAnalyses });
+    const mistakeAnalyses = await resolveMistakeAnalyses();
+
+    const applied = await syncAttemptOnce({ attempt, quiz, userId });
+    if (!applied) {
+      await applyPostCommitReviewQueueEffects(mistakeAnalyses);
+      return {
+        type,
+        attemptId: String(attemptId),
+        quizId: String(quizId),
+        applied: false,
+        duplicate: true,
+      };
     }
-    await rebuildReviewQueueForUser(userId);
+
+    await applyPostCommitReviewQueueEffects(mistakeAnalyses);
 
     return {
       type,

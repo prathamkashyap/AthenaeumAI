@@ -845,6 +845,79 @@ describe("CONTRACT: a repeated SYNC_ATTEMPT job is a no-op", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The recovery window Task 38 identified.
+//
+// `enqueueFailedQuestionItems` and `rebuildReviewQueueForUser` run *after* the
+// transaction commits, so a worker that dies between the commit and them leaves
+// the review queue incomplete. The durable claim still reads as "processed", so
+// the redelivery below is exactly the case that used to return early and lose
+// those effects for good.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("CONTRACT: a redelivery repairs post-commit review queue effects", () => {
+  beforeEach(() => {
+    // The transaction committed and the claim is durable, but the review queue
+    // this attempt should have produced was never written.
+    seedAttempt("attempt-1", { sync: { status: "processed", appliedAt: NOW } });
+    expect(learnerState().queueItemCount).toBe(0);
+  });
+
+  test("reconstructs the failed-question state for an already-processed attempt", async () => {
+    await processBackgroundJob(syncJob("attempt-1"));
+
+    const repaired = learnerState();
+    expect(repaired.queueItemCount).toBeGreaterThan(0);
+
+    const failedQuestions = [...store.queueItems.values()].filter(
+      (item) => item.itemType === "failed_question" && String(item.user) === USER_ID,
+    );
+    expect(failedQuestions.map((item) => item.topic).sort()).toEqual([
+      "Deadlock",
+      "Scheduling",
+    ]);
+  });
+
+  test("still reports the delivery as a duplicate that applied nothing", async () => {
+    await expect(processBackgroundJob(syncJob("attempt-1"))).resolves.toEqual({
+      type: "SYNC_ATTEMPT",
+      attemptId: "attempt-1",
+      quizId: QUIZ_ID,
+      applied: false,
+      duplicate: true,
+    });
+  });
+
+  test("replaying the repair repeatedly does not duplicate queue items", async () => {
+    await processBackgroundJob(syncJob("attempt-1"));
+    const afterFirst = learnerState();
+    // Guards against this passing vacuously by comparing zero to zero.
+    expect(afterFirst.queueItemCount).toBeGreaterThan(0);
+    const topicsAfterFirst = [...store.queueItems.values()]
+      .map((item) => `${item.itemType}:${item.topic}`)
+      .sort();
+
+    await processBackgroundJob(syncJob("attempt-1"));
+    await processBackgroundJob(syncJob("attempt-1"));
+
+    expect(learnerState().queueItemCount).toBe(afterFirst.queueItemCount);
+    expect(
+      [...store.queueItems.values()].map((item) => `${item.itemType}:${item.topic}`).sort(),
+    ).toEqual(topicsAfterFirst);
+  });
+
+  test("repairs the queue without re-applying the transactional effects", async () => {
+    // Nothing was ever committed for this attempt, so a correct repair creates
+    // review-queue state and touches nothing the transaction owns.
+    await processBackgroundJob(syncJob("attempt-1"));
+
+    const state = learnerState();
+    expect(state.totals.quizzesTaken).toBe(0);
+    expect(state.totals.questionsAnswered).toBe(0);
+    expect(state.quizEventCount).toBe(0);
+    expect(state.achievements).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The key boundary: duplicates are per attempt, not global.
 // These must hold before AND after idempotency is implemented, so that a fix
 // cannot simply suppress all later attempts.
