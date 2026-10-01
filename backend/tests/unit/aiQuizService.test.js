@@ -545,6 +545,54 @@ describe("generateTutorResponseFromAI", () => {
     });
   });
 
+  test("sends the learner's question and the whole personalization payload to the provider", async () => {
+    // The function is responsible for forwarding the learner profile alongside the
+    // retrieved context; without this the tutor would silently lose it.
+    const provider = useProvider(createMockAIProvider({ answer: "Start with circular wait." }));
+
+    await generateTutorResponseFromAI(tutorArgs);
+
+    const prompt = provider.complete.mock.calls[0][0].messages[1].content;
+    expect(prompt).toContain("What is deadlock?");
+    expect(prompt).toContain("WEAK TOPICS:");
+    expect(prompt).toContain("Deadlock");           // weakTopics[0].topic
+    expect(prompt).toContain("RECENT MISTAKES:");
+    expect(prompt).toContain("RELATED FLASHCARDS:");
+  });
+
+  test("uses the tutor's own request parameters and system role", async () => {
+    // Pinned separately from the quiz path, which shares this module but sends
+    // different sampling values.
+    const provider = useProvider(createMockAIProvider({ answer: "Consider the conditions." }));
+
+    await generateTutorResponseFromAI(tutorArgs);
+
+    const request = provider.complete.mock.calls[0][0];
+    expect(request.model).toBe("llama-3.3-70b-versatile");
+    expect(request.temperature).toBe(0.2);
+    expect(request.maxTokens).toBe(2500);
+    expect(request.messages[0].role).toBe("system");
+    expect(request.messages[0].content).toContain("Socratic");
+  });
+
+  test("omits personalization sections that are not supplied", async () => {
+    const provider = useProvider(createMockAIProvider({ answer: "Nothing to personalise yet." }));
+
+    await generateTutorResponseFromAI({
+      question: "What is deadlock?",
+      materialContexts: tutorArgs.materialContexts,
+      weakTopics: [],
+      mistakeHistory: [],
+      flashcards: [],
+    });
+
+    // An empty array is still forwarded and serialised as `[]`, rather than the
+    // section silently disappearing from the prompt.
+    const prompt = provider.complete.mock.calls[0][0].messages[1].content;
+    expect(prompt).toContain("WEAK TOPICS:");
+    expect(prompt).toContain("[]");
+  });
+
   test("caps each collection so one verbose response cannot flood the client", async () => {
     useProvider(createMockAIProvider([{
       answer: "Work through it.",
