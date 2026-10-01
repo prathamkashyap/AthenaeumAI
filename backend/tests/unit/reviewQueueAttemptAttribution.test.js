@@ -43,21 +43,34 @@ const matches = (item, filter) =>
 
 const store = { queueItems: [] };
 
+/** Applies `$set` the way MongoDB does, creating intermediate objects. */
+const applySet = (doc, set) => {
+  for (const [path, value] of Object.entries(set)) {
+    const parts = path.split(".");
+    let cursor = doc;
+    for (const part of parts.slice(0, -1)) {
+      if (cursor[part] == null) cursor[part] = {};
+      cursor = cursor[part];
+    }
+    cursor[parts.at(-1)] = value;
+  }
+  return doc;
+};
+
 reviewQueueFindOneAndUpdate.mockImplementation(async (filter, update, options = {}) => {
   const found = store.queueItems.find((item) => matches(item, filter));
   if (found) {
-    Object.assign(found, update.$set);
+    // Dotted paths included: the service writes `source.*` key by key.
+    applySet(found, update.$set);
     return found;
   }
   if (!options.upsert) return null;
   // `status` is a schema default, not part of the service's $set, so the store
   // has to apply it the way Mongoose would or nothing would read as "open".
-  const created = {
-    _id: `rq-${store.queueItems.length + 1}`,
-    status: "open",
-    ...update.$set,
-    ...(update.$setOnInsert ?? {}),
-  };
+  const created = applySet(
+    { _id: `rq-${store.queueItems.length + 1}`, status: "open" },
+    { ...update.$set, ...(update.$setOnInsert ?? {}) }
+  );
   store.queueItems.push(created);
   return created;
 });
@@ -73,6 +86,12 @@ const chainOf = (items) => {
   return query;
 };
 
+const reviewQueueUpdateMany = jest.fn(async (filter, update) => {
+  const matched = store.queueItems.filter((i) => matches(i, filter));
+  matched.forEach((i) => applySet(i, update.$set));
+  return { modifiedCount: matched.length };
+});
+
 reviewQueueFind.mockImplementation((filter) => chainOf(store.queueItems.filter((i) => matches(i, filter))));
 reviewQueueCountDocuments.mockImplementation(async (filter) => store.queueItems.filter((i) => matches(i, filter)).length);
 flashcardSetFind.mockImplementation(() => chainOf([]));
@@ -82,6 +101,7 @@ jest.unstable_mockModule("../../models/ReviewQueue.js", () => ({
   default: {
     find: reviewQueueFind,
     findOneAndUpdate: reviewQueueFindOneAndUpdate,
+    updateMany: reviewQueueUpdateMany,
     countDocuments: reviewQueueCountDocuments,
   },
 }));
@@ -248,6 +268,127 @@ describe("replaying an earlier attempt after a later one exists", () => {
     await enqueue("attempt-1");
 
     expect(openItems("failed_question")).toHaveLength(2);
+  });
+});
+
+// ─── F. A linked item survives replay ──────────────────────────────────────────
+
+/**
+ * The link step `createFlashcardSet` performs (backend/services/flashcardService.js:236-242),
+ * reproduced verbatim so this file can drive it against the store. The linker is
+ * covered on its own terms in `flashcardMistakes.test.js`; what is under test
+ * here is what a later replay does to a link it has already made.
+ */
+const linkFlashcards = (attemptId, flashcardSetId) =>
+  reviewQueueUpdateMany(
+    {
+      user: USER,
+      itemType: "failed_question",
+      status: "open",
+      "source.attempt": attemptId,
+      "source.flashcardSet": null,
+    },
+    { $set: { "source.flashcardSet": flashcardSetId } }
+  );
+
+describe("a flashcard link added after creation survives replay", () => {
+  const linked = () => openItems("failed_question").find((i) => i.source?.flashcardSet);
+
+  test("creation persists the quiz and the attempt", async () => {
+    await enqueue("attempt-1");
+
+    const [item] = openItems("failed_question");
+    expect(String(item.source.quiz)).toBe("quiz-1");
+    expect(attemptOf(item)).toBe("attempt-1");
+    expect(item.source.flashcardSet ?? null).toBeNull();
+  });
+
+  test("the link step attaches the flashcard set", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+
+    expect(String(openItems("failed_question")[0].source.flashcardSet)).toBe("set-1");
+  });
+
+  test("one replay keeps the link", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+
+    await enqueue("attempt-1");
+
+    const items = openItems("failed_question");
+    expect(items).toHaveLength(1);
+    expect(attemptOf(items[0])).toBe("attempt-1");
+    expect(String(items[0].source.flashcardSet)).toBe("set-1");
+  });
+
+  test("repeated replays neither erase the link nor duplicate the item", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+
+    await enqueue("attempt-1");
+    await enqueue("attempt-1");
+    await enqueue("attempt-1");
+
+    const items = openItems("failed_question");
+    expect(items).toHaveLength(1);
+    expect(String(items[0].source.flashcardSet)).toBe("set-1");
+  });
+
+  test("a replay still refreshes the producer's own content", async () => {
+    await enqueue("attempt-1", [mistake({ clarification: "first explanation" })]);
+    await linkFlashcards("attempt-1", "set-1");
+
+    await enqueue("attempt-1", [mistake({ clarification: "corrected explanation" })]);
+
+    // The fix must not degenerate into "stop updating the item".
+    expect(openItems("failed_question")[0].metadata.clarification).toBe("corrected explanation");
+    expect(String(openItems("failed_question")[0].source.flashcardSet)).toBe("set-1");
+  });
+
+  test("a replay does not clear the quiz attribution either", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+    await enqueue("attempt-1");
+
+    expect(String(openItems("failed_question")[0].source.quiz)).toBe("quiz-1");
+  });
+
+  test("a later attempt neither re-points nor unlinks the earlier one", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+
+    await enqueue("attempt-2");
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    expect(byAttempt("attempt-1")).toHaveLength(1);
+    expect(byAttempt("attempt-2")).toHaveLength(1);
+    expect(String(linked().source.flashcardSet)).toBe("set-1");
+    expect(attemptOf(linked())).toBe("attempt-1");
+  });
+
+  test("the later attempt's item carries no link of its own", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+    await enqueue("attempt-2");
+
+    const second = byAttempt("attempt-2")[0];
+    expect(second.source.flashcardSet ?? null).toBeNull();
+  });
+
+  test("replaying both attempts keeps both links and both identities", async () => {
+    await enqueue("attempt-1");
+    await linkFlashcards("attempt-1", "set-1");
+    await enqueue("attempt-2");
+    await linkFlashcards("attempt-2", "set-2");
+
+    await enqueue("attempt-1");
+    await enqueue("attempt-2");
+    await enqueue("attempt-1");
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    expect(String(byAttempt("attempt-1")[0].source.flashcardSet)).toBe("set-1");
+    expect(String(byAttempt("attempt-2")[0].source.flashcardSet)).toBe("set-2");
   });
 });
 

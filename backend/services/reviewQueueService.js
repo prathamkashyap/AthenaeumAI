@@ -15,6 +15,9 @@ const nowPlusHours = (hours) => new Date(Date.now() + hours * 60 * 60 * 1000);
 // is really a missing attribution.
 const ATTEMPT_SCOPED_ITEM_TYPES = new Set(["failed_question"]);
 
+// The `source` fields declared on the ReviewQueue schema.
+const SOURCE_FIELDS = ["quiz", "attempt", "flashcardSet", "flashcardId"];
+
 const upsertOpenQueueItem = async (item) => {
   if (ATTEMPT_SCOPED_ITEM_TYPES.has(item.itemType) && !item.source?.attempt) {
     const error = new Error(
@@ -39,9 +42,26 @@ const upsertOpenQueueItem = async (item) => {
   if (item.source?.flashcardSet) filter["source.flashcardSet"] = item.source.flashcardSet;
   if (item.source?.flashcardId) filter["source.flashcardId"] = item.source.flashcardId;
 
+  // `source` is written key by key rather than as one subdocument, because not
+  // every caller supplies all of it. `enqueueFailedQuestionItems` sends only
+  // { quiz, attempt } and knows nothing about flashcards, so assigning its
+  // `source` wholesale would erase a link that `createFlashcardSet` added after
+  // the item was created -- and every SYNC_ATTEMPT replay re-runs that enqueue,
+  // because a duplicate delivery is not evidence that the queue effects ran.
+  //
+  // Nothing legitimately clears a `source` field here: no caller sends a field
+  // it intends to unset, so absent means "not mine to write" rather than
+  // "remove it". Writing only what the caller owns still refreshes the
+  // producer's own content on replay.
+  const { source, ...ownedFields } = item;
+  const $set = { ...ownedFields };
+  for (const key of SOURCE_FIELDS) {
+    if (source?.[key]) $set[`source.${key}`] = source[key];
+  }
+
   return ReviewQueue.findOneAndUpdate(
     filter,
-    { $set: item, $setOnInsert: { createdAt: new Date() } },
+    { $set, $setOnInsert: { createdAt: new Date() } },
     { upsert: true, new: true }
   );
 };

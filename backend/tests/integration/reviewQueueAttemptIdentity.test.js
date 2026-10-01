@@ -222,6 +222,86 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     expect(await openItems()).toHaveLength(1);
   });
 
+  // ─── A link added after creation must survive a replay ───────────────────────
+
+  test("a linked failed-question item keeps its flashcard link across replays", async () => {
+    const attempt = oid();
+    await enqueue(attempt);
+
+    // The exact update `createFlashcardSet` issues
+    // (backend/services/flashcardService.js:236-242). Reproduced here rather
+    // than called so the test drives real persistence without pulling the AI
+    // flashcard generator into a queue test; the linker has its own coverage in
+    // tests/unit/flashcardMistakes.test.js.
+    const linkResult = await ReviewQueue.updateMany(
+      {
+        user,
+        itemType: "failed_question",
+        status: "open",
+        "source.attempt": attempt,
+        "source.flashcardSet": null,
+      },
+      { $set: { "source.flashcardSet": oid() } }
+    );
+    expect(linkResult.modifiedCount).toBe(1);
+
+    const linkedSetId = String((await openItems())[0].source.flashcardSet);
+    expect(linkedSetId).toBeDefined();
+
+    // Three replays, as a redelivered SYNC_ATTEMPT would produce.
+    await enqueue(attempt);
+    await enqueue(attempt);
+    await enqueue(attempt);
+
+    const items = await openItems();
+    expect(items).toHaveLength(1);
+    expect(String(items[0].source.flashcardSet)).toBe(linkedSetId);
+    expect(String(items[0].source.attempt)).toBe(String(attempt));
+    expect(String(items[0].source.quiz)).toBe(String(quiz));
+  });
+
+  test("a replay refreshes producer content without touching the link", async () => {
+    const attempt = oid();
+    await enqueue(attempt, [mistake({ clarification: "first explanation" })]);
+
+    const setId = oid();
+    await ReviewQueue.updateMany(
+      { user, itemType: "failed_question", status: "open", "source.attempt": attempt, "source.flashcardSet": null },
+      { $set: { "source.flashcardSet": setId } }
+    );
+
+    await enqueue(attempt, [mistake({ clarification: "corrected explanation" })]);
+
+    const [item] = await openItems();
+    expect(item.metadata.clarification).toBe("corrected explanation");
+    expect(String(item.source.flashcardSet)).toBe(String(setId));
+  });
+
+  test("a later attempt leaves an earlier attempt's link alone", async () => {
+    const first = oid();
+    const second = oid();
+    await enqueue(first);
+
+    const setId = oid();
+    await ReviewQueue.updateMany(
+      { user, itemType: "failed_question", status: "open", "source.attempt": first, "source.flashcardSet": null },
+      { $set: { "source.flashcardSet": setId } }
+    );
+
+    await enqueue(second);
+    await enqueue(first);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+
+    const firstItem = items.find((i) => String(i.source.attempt) === String(first));
+    const secondItem = items.find((i) => String(i.source.attempt) === String(second));
+
+    expect(String(firstItem.source.flashcardSet)).toBe(String(setId));
+    expect(String(firstItem.source.attempt)).toBe(String(first));
+    expect(secondItem.source.flashcardSet ?? null).toBeNull();
+  });
+
   test("items without an attempt are still deduplicated by topic", async () => {
     const build = () =>
       ReviewQueue.findOneAndUpdate(

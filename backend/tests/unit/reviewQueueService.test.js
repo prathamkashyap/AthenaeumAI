@@ -290,7 +290,10 @@ describe("rebuildReviewQueueForUser — topic item construction", () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     await rebuildReviewQueueForUser(USER_ID);
     expect(upsertedItem(0).user).toBe(USER_ID);
-    expect(upsertedItem(0).source).toEqual({});
+    // The service writes `source` key by key and a topic item carries none, so
+    // it contributes no `source` key at all. Nothing here clears a link either:
+    // the update deliberately never assigns a `source` field it was not given.
+    expect(Object.keys(upsertedItem(0)).filter((k) => k.startsWith("source"))).toEqual([]);
   });
 
   test("falls back to zeroed values when a topic omits its optional fields", async () => {
@@ -640,7 +643,12 @@ describe("enqueueFailedQuestionItems", () => {
       attempt: { _id: "attempt-1" },
       mistakeAnalyses: [analysis()],
     });
-    expect(upsertedItem(0).source).toEqual({ quiz: "quiz-1", attempt: "attempt-1" });
+    // Written as explicit `source.*` paths rather than one `source`
+    // subdocument, so that a replay which supplies neither cannot erase a
+    // flashcard link that was added after creation.
+    expect(upsertedItem(0)["source.quiz"]).toBe("quiz-1");
+    expect(upsertedItem(0)["source.attempt"]).toBe("attempt-1");
+    expect(Object.keys(upsertedItem(0))).not.toContain("source");
   });
 
   test("carries the analysis detail into metadata", async () => {
