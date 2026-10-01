@@ -759,12 +759,23 @@ Each gap below is a direct consequence of the inventory above.
 
 **AI layer**
 
-7. No test imports `aiQuizService.js` or `streamingTutorService.js`. Every AI function has
-   0.00% function coverage.
-8. No usable injectable or mock AI provider exists. `backend/tests/mocks/groqMock.js` is
+7. ~~No test imports `aiQuizService.js` or `streamingTutorService.js`. Every AI function has
+   0.00% function coverage.~~ **Resolved.** `aiQuizService.test.js` and
+   `streamingTutorService.test.js` now import both modules directly and drive their exports
+   against a stubbed provider, so this is direct service-level coverage rather than
+   module-load-only coverage. It is **not** full coverage: `generateFlashcardsFromAI`,
+   `getGroqClient` and the prompt builders are still never executed. The 0.00% figures
+   quoted elsewhere in this document are prior measurements and were not re-measured.
+8. ~~No usable injectable or mock AI provider exists. `backend/tests/mocks/groqMock.js` is
    imported by nothing, is not collected by Jest, and could not be wired in without adding a
    seam, because both services call `new Groq(...)` inline. Its `MOCK_TUTOR_RESPONSE` shape
-   also does not match the current tutor response contract.
+   also does not match the current tutor response contract.~~ **Resolved.** An injectable
+   provider seam exists: `setAIProvider` / `getAIProvider` / `resetAIProvider`
+   (`backend/services/aiProvider.js:252-263`). Groq is constructed only in
+   `backend/services/groqProvider.js` and reached lazily from `getAIProvider()`, so
+   `new Groq` no longer appears in either AI service. The offline suites inject a stub
+   through the seam (`backend/tests/mocks/mockAIProvider.js`), which is why they need no
+   network and no API key. The `groqMock.js` this finding cited has since been removed.
 9. Quiz quality filtering and non-trivial deduplication are on the live upload path: the route
    calls `generateQuiz` (`quizController.js:117`), which filters, de-duplicates and ranks before
    persisting. The 25-case `qualityFilter` suite therefore covers a module a user-facing request
