@@ -646,9 +646,10 @@ Factual statements about what the current code implies for the rework. No action
    rethrown, so a real bug is never disguised as a scheduling problem.
    `REBUILD_REVIEW_QUEUE` swallows the same error and only logs it
    (`recommendationService.js:42-47`). A client *can* check afterwards — `GET /api/v1/jobs/:id`
-   returns the tracked job — but that is visibility, not recovery: nothing re-enqueues a
-   `not_scheduled` or terminally `failed` job, and there is no reconciliation pass. `/health`
-   exposes raw BullMQ counts only (`healthRoutes.js:36-42`).
+   returns the tracked job — and it can also ask for a terminal `SYNC_ATTEMPT` to be re-run at
+   `POST /api/v1/jobs/:id/retry`, which is user-triggered recovery rather than automatic
+   recovery: nothing re-enqueues a terminal job on its own, and there is no reconciliation
+   pass. `/health` exposes raw BullMQ counts only (`healthRoutes.js:36-42`).
 4. **Retrieval quality claims must be scoped to the tokenizer.** `local-hash-v1` produces
    non-zero similarity only for shared exact tokens (or hash-bucket collisions). Any statement that
    the retriever "understands" a query is unsupported by the implementation. The existing
