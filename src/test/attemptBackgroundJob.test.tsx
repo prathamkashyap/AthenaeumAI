@@ -212,13 +212,25 @@ describe("each job state is presented as itself", () => {
     expect(screen.queryByText(/have all been updated/i)).toBeNull();
   });
 
-  it("does not promise a repair, and points only at an existing action", async () => {
-    mockQuizAndAttempt(NOT_SCHEDULED);
+  it("does not promise an automatic repair, and offers only what it can do", async () => {
+    // A job id is what makes the job re-runnable, so this case carries one.
+    mockQuizAndAttempt({
+      ...NOT_SCHEDULED,
+      backgroundProcessing: {
+        task: "SYNC_ATTEMPT",
+        status: "not_scheduled",
+        jobId: "job-1",
+      },
+    });
     await submitAndViewResult();
 
     await screen.findByText(/this attempt was not applied/i);
-    // Nothing re-enqueues the job, so the only honest remedy is the existing one.
-    expect(screen.getByText(/taking the quiz again/i)).toBeTruthy();
+    // Retrying is now available and applies this same attempt, so it replaces the
+    // retake instruction. What must not appear is a claim that the backend will
+    // fix this on its own: nothing reschedules a terminal job by itself.
+    expect(screen.getByRole("button", { name: /retry updating my progress/i })).toBeTruthy();
+    expect(screen.getByText(/scheduled again, which applies this attempt/i)).toBeTruthy();
+    expect(screen.queryByText(/taking the quiz again/i)).toBeNull();
     expect(screen.queryByText(/automatically/i)).toBeNull();
     expect(screen.queryByText(/we will retry/i)).toBeNull();
   });

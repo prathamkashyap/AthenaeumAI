@@ -26,11 +26,13 @@ import {
 
 const ResultAssessment = () => {
   const navigate = useNavigate();
-  const { lastResult, clearQuiz } = useQuiz();
+  const { lastResult, clearQuiz, retryBackgroundJob } = useQuiz();
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [isCreatingDeck, setIsCreatingDeck] = useState(false);
   const [isCreatingMistakeDeck, setIsCreatingMistakeDeck] = useState(false);
+  const [isRetryingJob, setIsRetryingJob] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const [mistakeDeckError, setMistakeDeckError] = useState<string | null>(null);
 
 
@@ -46,6 +48,37 @@ const ResultAssessment = () => {
     attemptId = undefined,
     backgroundProcessing = null,
   } = lastResult || {};
+
+  /**
+   * Re-runs the background work for the attempt already on screen.
+   *
+   * The attempt itself is untouched: the backend retries the job that belongs to
+   * it, so this repairs the first attempt rather than producing a second one. The
+   * tracked job state is replaced by whatever the server returns, and the existing
+   * polling effect resumes from there — there is no second interval here.
+   *
+   * `isRetryingJob` is what makes a double click harmless: the button is disabled
+   * for the duration, and the guard below refuses a concurrent call even if the
+   * event fires twice before React re-renders.
+   */
+  const handleRetryBackgroundJob = async () => {
+    const jobId = backgroundProcessing?.jobId;
+    if (!jobId || isRetryingJob) return;
+
+    setIsRetryingJob(true);
+    setRetryError(null);
+    try {
+      const updated = await retryBackgroundJob(jobId);
+      // A null result means the request did not complete. The terminal state is
+      // still true about the attempt, so it stays on screen and the learner is
+      // told why nothing happened.
+      if (!updated) {
+        setRetryError("Could not start the retry. Please try again.");
+      }
+    } finally {
+      setIsRetryingJob(false);
+    }
+  };
 
   /**
    * How each state of the attempt's background job is presented.
@@ -72,6 +105,7 @@ const ResultAssessment = () => {
       iconClass: "text-accent",
       badgeClass: "border-accent/40 text-accent",
       badgeText: "Applying",
+      retryable: false,
     },
     queued: {
       title: "Applying this attempt",
@@ -81,6 +115,7 @@ const ResultAssessment = () => {
       iconClass: "text-accent",
       badgeClass: "border-accent/40 text-accent",
       badgeText: "Queued",
+      retryable: false,
     },
     running: {
       title: "Applying this attempt",
@@ -90,6 +125,7 @@ const ResultAssessment = () => {
       iconClass: "text-accent",
       badgeClass: "border-accent/40 text-accent",
       badgeText: "Running",
+      retryable: false,
     },
     completed: {
       title: "This attempt is fully applied",
@@ -99,24 +135,29 @@ const ResultAssessment = () => {
       iconClass: "text-emerald-500",
       badgeClass: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
       badgeText: "Applied",
+      retryable: false,
     },
     failed: {
       title: "This attempt's updates did not finish",
       detail:
-        "Your score is saved, but the background job ran and did not complete, so this attempt is not reflected in your topic progress or review queue.",
+        "Your score is saved, but the background job ran and did not complete, so this attempt is not reflected in your topic progress or review queue. Retrying continues processing this same attempt.",
       Icon: XCircle,
       iconClass: "text-destructive",
       badgeClass: "border-destructive/40 text-destructive",
       badgeText: "Failed",
+      // The backend can re-run the job this attempt belongs to, so the learner is
+      // offered that before anything that would create a second attempt.
+      retryable: true,
     },
     not_scheduled: {
       title: "This attempt was not applied",
       detail:
-        "Your score is saved, but the background job was never started, so this attempt is not reflected in your topic progress or review queue. Taking the quiz again will apply that attempt instead.",
+        "Your score is saved, but the background job was never started, so this attempt is not reflected in your topic progress or review queue. It can be scheduled again, which applies this attempt rather than a new one.",
       Icon: AlertTriangle,
       iconClass: "text-amber-500",
       badgeClass: "border-amber-500/50 text-amber-600 dark:text-amber-400",
       badgeText: "Not applied",
+      retryable: true,
     },
   } as const;
 
@@ -623,6 +664,22 @@ const ResultAssessment = () => {
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-sm font-medium text-foreground">{attemptJob.title}</p>
               <p className="text-xs text-muted-foreground">{attemptJob.detail}</p>
+              {attemptJob.retryable && backgroundProcessing?.jobId && (
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isRetryingJob}
+                    onClick={handleRetryBackgroundJob}
+                  >
+                    {isRetryingJob ? "Retrying\u2026" : "Retry updating my progress"}
+                  </Button>
+                  {retryError && (
+                    <p className="mt-1 text-xs text-destructive">{retryError}</p>
+                  )}
+                </div>
+              )}
               {backgroundProcessing?.trackingError && (
                 <p className="text-xs text-muted-foreground/80">
                   {backgroundProcessing.trackingError} The status shown above is the last one

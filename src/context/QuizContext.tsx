@@ -157,6 +157,14 @@ interface QuizContextType {
    * elsewhere can read it without reaching into the context's internals.
    */
   fetchJobStatus: (jobId: string) => Promise<BackgroundProcessing | null>;
+  /**
+   * Asks the backend to re-run the tracked terminal job, once.
+   *
+   * `null` means the attempt was made and rejected, or the request itself did not
+   * complete; the tracked job state is left exactly as it was either way, because
+   * a failed retry is not evidence about the job itself.
+   */
+  retryBackgroundJob: (jobId: string) => Promise<BackgroundProcessing | null>;
   generateQuiz: (file: File, difficulty: string, count?: number) => Promise<QuizData>;
   fetchQuiz: (id: string) => Promise<QuizData>;
   setResult: (result: AttemptResult) => void;
@@ -252,6 +260,49 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       });
     },
     []
+  );
+
+  /**
+   * Re-runs the tracked job through `POST /api/v1/jobs/:id/retry`.
+   *
+   * It targets the job the page is already tracking, so the retry applies the
+   * attempt that was already saved rather than creating a second one. No resource
+   * identifiers are sent: the backend derives everything from the job record it
+   * already owns, and accepting them from a client would be the one way this
+   * endpoint could be pointed at somebody else's attempt.
+   *
+   * The response is written back through `applyJobUpdate`, which is what makes the
+   * existing polling effect pick the job up again: a retried job comes back
+   * non-terminal, and the loop is keyed on the status, so no second interval is
+   * needed. Any `trackingError` from the failed state is dropped, because it
+   * described the *previous* read failure and says nothing about this attempt.
+   */
+  const retryBackgroundJob = useCallback(
+    async (jobId: string): Promise<BackgroundProcessing | null> => {
+      try {
+        const res = await apiFetch(`/jobs/${jobId}/retry`, { method: "POST" });
+        if (!res.ok) return null;
+
+        const data = (await res.json()) as JobStatusResponse;
+        if (!data?.status) return null;
+
+        const next: BackgroundProcessing = {
+          task: data.type || "SYNC_ATTEMPT",
+          status: data.status,
+          jobId: data.jobId || jobId,
+          error: data.error ?? null,
+          trackingError: null,
+        };
+
+        applyJobUpdate((previous) => ({ ...next, trackingError: previous?.trackingError ?? null }));
+        return next;
+      } catch {
+        // The terminal state the learner was looking at is still true, so it is
+        // deliberately left in place rather than being replaced by a guess.
+        return null;
+      }
+    },
+    [applyJobUpdate],
   );
 
   /**
@@ -392,7 +443,15 @@ export function QuizProvider({ children }: { children: ReactNode }) {
   return (
     <QuizContext.Provider
       value={{ currentQuiz, lastResult, isGenerating, generationProgress, error, backgroundProcessing,
-        fetchJobStatus, generateQuiz, fetchQuiz, setResult, saveAttempt, clearError, clearQuiz }}
+        fetchJobStatus,
+        retryBackgroundJob,
+        generateQuiz,
+        fetchQuiz,
+        setResult,
+        saveAttempt,
+        clearError,
+        clearQuiz,
+      }}
     >
       {children}
     </QuizContext.Provider>
