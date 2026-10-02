@@ -65,6 +65,48 @@ const upsertOpenQueueItem = async (item) => {
     if (source?.[key]) $set[`source.${key}`] = source[key];
   }
 
+  const hasQuestionIdentity =
+    item.questionIndex !== undefined && item.questionIndex !== null;
+
+  // 1. The ordinary path. Split from the upsert so a miss is observable: an upsert
+  //    would create the row we may still be able to adopt instead.
+  const identified = await ReviewQueue.findOneAndUpdate(filter, { $set }, { new: true });
+  if (identified) return identified;
+
+  // 2. A row written before `questionIndex` became part of the identity carries
+  //    the question only in `metadata`, so it indexes as null and matched nothing
+  //    above. Replay would otherwise insert a second row for the same question,
+  //    and because the old row still holds `metadata.questionIndex` the review
+  //    page would render two cards with the same `Q{n}`.
+  //
+  //    Run only after an identified-row miss, never before: Task 64's own upsert
+  //    can leave a legacy row and an identified row coexisting for one question
+  //    (their index keys differ), and adopting first would then set a
+  //    `questionIndex` that the unique index already holds elsewhere.
+  if (hasQuestionIdentity && item.source?.quiz && item.source?.attempt) {
+    const adopted = await ReviewQueue.findOneAndUpdate(
+      {
+        user: item.user,
+        itemType: item.itemType,
+        status: "open",
+        topic: filter.topic,
+        "source.quiz": item.source.quiz,
+        "source.attempt": item.source.attempt,
+        // Equality-matches absent and null identically, which is the same
+        // semantics the unique index relies on, so this selects only rows that
+        // predate the field.
+        questionIndex: null,
+        "metadata.questionIndex": item.questionIndex,
+      },
+      { $set },
+      { new: true }
+    );
+    if (adopted) return adopted;
+  }
+
+  // 3. Nothing to adopt: create the row as before. The filter is reused verbatim,
+  //    so a row written concurrently between the steps is matched here rather
+  //    than duplicated.
   return ReviewQueue.findOneAndUpdate(
     filter,
     { $set, $setOnInsert: { createdAt: new Date() } },

@@ -521,7 +521,7 @@ describe("an attempt collapsed before the fix heals on replay", () => {
     });
   };
 
-  test("the previously lost question is recreated alongside the stale row", async () => {
+  test("the lost question is recreated and the stale row is adopted, not duplicated", async () => {
     // Before the fix only the last-written question survived, and the surviving row
     // carries no question identity at all.
     collapsedRow("attempt-1", 4, "question four");
@@ -532,15 +532,26 @@ describe("an attempt collapsed before the fix heals on replay", () => {
       mistake({ topic: "General", questionIndex: 4, misconception: "question four" }),
     ]);
 
-    // The stale row has `questionIndex: null`, so it matches neither identity and
-    // both questions are written as properly identified items beside it. The lost
-    // diagnosis is recovered; the stale row itself is left in place rather than
-    // deleted, because this service is an upsert and not a reconcile.
+    // The stale row's `metadata.questionIndex` identifies it as question 4, so it is
+    // adopted in place and gains the question identity. Without adoption the row
+    // would sit beside a freshly inserted twin and the review page would render two
+    // cards both labelled Q5.
     const items = openItems("failed_question");
-    expect(items).toHaveLength(3);
-    expect(items.filter((i) => i.questionIndex === null)).toHaveLength(1);
+    expect(items).toHaveLength(2);
+    expect(items.filter((i) => i.questionIndex === null)).toHaveLength(0);
     expect(items.filter((i) => i.questionIndex === 1)).toHaveLength(1);
     expect(items.filter((i) => i.questionIndex === 4)).toHaveLength(1);
+  });
+
+  test("adoption keeps the adopted row's identity rather than replacing it", async () => {
+    collapsedRow("attempt-1", 4, "question four");
+    const before = openItems("failed_question")[0]._id;
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4, misconception: "question four" })]);
+
+    const items = openItems("failed_question");
+    expect(items).toHaveLength(1);
+    expect(items[0]._id).toBe(before);
   });
 
   test("both of the learner's questions are correctly attributed afterwards", async () => {
@@ -615,6 +626,218 @@ describe("item types with no question keep their identity", () => {
 
     expect(openItems("failed_question")).toHaveLength(2);
     expect(openItems("weak_topic")).toHaveLength(1);
+  });
+});
+
+// ─── Legacy adoption ──────────────────────────────────────────────────────────
+
+/**
+ * Rows written before `questionIndex` became part of the item's identity carry
+ * the question only in `metadata`. They index as null, so Task 64's replay matched
+ * nothing and inserted a second row for the same question -- leaving the learner
+ * with two cards both labelled `Q{n}`, because the stale row still holds
+ * `metadata.questionIndex` and the badge is rendered from it.
+ *
+ * Replay now adopts such a row instead of writing beside it.
+ */
+describe("a row written before question identity is adopted, not duplicated", () => {
+  /** A row as it existed before Task 64: no top-level questionIndex. */
+  const legacyRow = (overrides = {}) => {
+    store.queueItems.push({
+      _id: `rq-legacy-${store.queueItems.length}`,
+      status: "open",
+      user: USER,
+      itemType: "failed_question",
+      subject: "Operating Systems",
+      topic: "General",
+      title: "Fix misconception: General",
+      priority: 80,
+      dueAt: NOW,
+      source: { quiz: "quiz-1", attempt: "attempt-1", flashcardSet: null, flashcardId: null },
+      metadata: { misconception: "legacy diagnosis", clarification: "legacy clarification" },
+      ...overrides,
+    });
+    return store.queueItems[store.queueItems.length - 1];
+  };
+
+  const q = (questionIndex, misconception) =>
+    mistake({ topic: "General", questionIndex, misconception });
+
+  test("A. the matching legacy row is adopted rather than duplicated", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    expect(openItems("failed_question")).toHaveLength(1);
+    expect(openItems("failed_question")[0].questionIndex).toBe(4);
+  });
+
+  test("A. adoption happens in place, keeping the row's identity", async () => {
+    const before = legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } })._id;
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    expect(openItems("failed_question")[0]._id).toBe(before);
+  });
+
+  test("B. two replayed questions yield two rows, not three", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(1, "question one"), q(4, "question four")]);
+
+    const items = openItems("failed_question");
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.questionIndex).sort()).toEqual([1, 4]);
+  });
+
+  test("B. no two rows claim the same question", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(1, "question one"), q(4, "question four")]);
+
+    const indices = openItems("failed_question").map((i) => i.questionIndex);
+    expect(new Set(indices).size).toBe(indices.length);
+  });
+
+  test("B. the adopted row carries the replayed diagnosis", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "stale diagnosis" } });
+
+    await enqueue("attempt-1", [q(4, "fresh diagnosis")]);
+
+    expect(openItems("failed_question")[0].metadata.misconception).toBe("fresh diagnosis");
+  });
+
+  test("C. metadata.questionIndex survives adoption, so the Q{n} badge still renders", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    expect(openItems("failed_question")[0].metadata.questionIndex).toBe(4);
+  });
+
+  test("C. diagnostic metadata is carried across rather than dropped", async () => {
+    legacyRow({
+      metadata: { questionIndex: 4, misconception: "legacy", clarification: "legacy", distractorReason: "legacy" },
+    });
+
+    await enqueue("attempt-1", [
+      q(4, "question four"),
+    ]);
+
+    const adopted = openItems("failed_question")[0];
+    expect(adopted.metadata.misconception).toBe("question four");
+    // Fields the producer still owns are refreshed; nothing is blanked.
+    expect(adopted.metadata).toHaveProperty("clarification");
+  });
+
+  test("D. repeated replay converges and does not accumulate", async () => {
+    legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(1, "question one"), q(4, "question four")]);
+    const afterFirst = openItems("failed_question").length;
+
+    await enqueue("attempt-1", [q(1, "question one"), q(4, "question four")]);
+    await enqueue("attempt-1", [q(1, "question one"), q(4, "question four")]);
+
+    expect(openItems("failed_question")).toHaveLength(afterFirst);
+    expect(afterFirst).toBe(2);
+  });
+
+  test("D. a second replay of only the adopted question still finds the same row", async () => {
+    const before = legacyRow({ metadata: { questionIndex: 4, misconception: "legacy" } })._id;
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    const items = openItems("failed_question");
+    expect(items).toHaveLength(1);
+    expect(items[0]._id).toBe(before);
+  });
+
+  test("E. a legacy row for a different question is left untouched", async () => {
+    const legacy = legacyRow({ metadata: { questionIndex: 4, misconception: "legacy diagnosis" } });
+
+    await enqueue("attempt-1", [q(1, "question one")]);
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    // Still un-identified: identity is never guessed from the topic.
+    const untouched = openItems("failed_question").find((i) => i._id === legacy._id);
+    expect(untouched.questionIndex ?? null).toBeNull();
+    expect(untouched.metadata.misconception).toBe("legacy diagnosis");
+  });
+
+  test("F. a legacy row with no metadata.questionIndex is never adopted", async () => {
+    const legacy = legacyRow({ metadata: { misconception: "no question at all" } });
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    // Inserted normally, and the un-identifiable row is left exactly as it was.
+    const rows = openItems("failed_question");
+    expect(rows).toHaveLength(2);
+    const untouched = rows.find((i) => i._id === legacy._id);
+    expect(untouched.questionIndex ?? null).toBeNull();
+    expect(untouched.metadata).toEqual({ misconception: "no question at all" });
+  });
+
+  test("F. adoption needs a real question index, not topic or description", async () => {
+    const legacy = legacyRow({
+      topic: "Deadlock",
+      title: "Fix misconception: Deadlock",
+      description: "a description that looks like an answer",
+      metadata: { misconception: "legacy" },
+    });
+
+    // The incoming item matches on topic, but carries no matching metadata index.
+    await enqueue("attempt-1", [mistake({ topic: "Deadlock", questionIndex: 2, misconception: "fresh" })]);
+
+    const untouched = openItems("failed_question").find((i) => i._id === legacy._id);
+    expect(untouched.questionIndex ?? null).toBeNull();
+  });
+
+  test("G. adoption never crosses attempts", async () => {
+    const legacy = legacyRow({
+      source: { quiz: "quiz-1", attempt: "attempt-1", flashcardSet: null, flashcardId: null },
+      metadata: { questionIndex: 4, misconception: "belongs to attempt one" },
+    });
+
+    // Same topic, same question index, different attempt.
+    await enqueue("attempt-2", [q(4, "belongs to attempt two")]);
+
+    const rows = openItems("failed_question");
+    expect(rows).toHaveLength(2);
+    const untouched = rows.find((i) => i._id === legacy._id);
+    expect(untouched.questionIndex ?? null).toBeNull();
+    expect(byAttempt("attempt-2")).toHaveLength(1);
+  });
+
+  test("G. two attempts each with a legacy row adopt their own", async () => {
+    legacyRow({
+      source: { quiz: "quiz-1", attempt: "attempt-1", flashcardSet: null, flashcardId: null },
+      metadata: { questionIndex: 4, misconception: "attempt one" },
+    });
+    legacyRow({
+      source: { quiz: "quiz-1", attempt: "attempt-2", flashcardSet: null, flashcardId: null },
+      metadata: { questionIndex: 4, misconception: "attempt two" },
+    });
+
+    await enqueue("attempt-1", [q(4, "attempt one")]);
+    await enqueue("attempt-2", [q(4, "attempt two")]);
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    expect(byAttempt("attempt-1")).toHaveLength(1);
+    expect(byAttempt("attempt-2")).toHaveLength(1);
+  });
+
+  test("I. adoption preserves a flashcard link added after creation", async () => {
+    const legacy = legacyRow({
+      metadata: { questionIndex: 4, misconception: "legacy" },
+      source: { quiz: "quiz-1", attempt: "attempt-1", flashcardSet: "set-1", flashcardId: null },
+    });
+
+    await enqueue("attempt-1", [q(4, "question four")]);
+
+    const adopted = openItems("failed_question").find((i) => i._id === legacy._id);
+    expect(String(adopted.source.flashcardSet)).toBe("set-1");
   });
 });
 

@@ -396,6 +396,175 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     expect(items.map((i) => i.questionIndex).sort()).toEqual([1, 4]);
   });
 
+  // ─── Legacy adoption, against the real index ─────────────────────────────────
+
+  /**
+   * A row as it existed before `questionIndex` became part of the identity: no
+   * top-level field, the question named only in `metadata`. Inserted directly so it
+   * is exactly what an older deployment left behind.
+   */
+  const legacyItem = (attemptId, questionIndex, metadata = {}) =>
+    ReviewQueue.create({
+      user,
+      itemType: "failed_question",
+      subject: "Operating Systems",
+      topic: "General",
+      title: "Fix misconception: General",
+      description: "legacy",
+      priority: 80,
+      status: "open",
+      dueAt: new Date(),
+      source: { quiz, attempt: attemptId, flashcardSet: null, flashcardId: null },
+      metadata: { questionIndex, misconception: "legacy diagnosis", ...metadata },
+    });
+
+  test("a pre-identity row is adopted rather than duplicated", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(1);
+    expect(items[0].questionIndex).toBe(4);
+  });
+
+  test("the two-question case yields two rows, not three", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+
+    await enqueue(attemptId, [
+      mistake({ topic: "General", questionIndex: 1 }),
+      mistake({ topic: "General", questionIndex: 4 }),
+    ]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.questionIndex).sort()).toEqual([1, 4]);
+  });
+
+  test("adoption raises no E11000 under the live partial unique index", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+
+    await expect(
+      enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })])
+    ).resolves.toBeDefined();
+    expect(await openItems()).toHaveLength(1);
+  });
+
+  test("a true duplicate identified question is still refused after adoption", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    await expect(
+      ReviewQueue.create({
+        user,
+        itemType: "failed_question",
+        subject: "Operating Systems",
+        topic: "General",
+        title: "Fix misconception: General",
+        priority: 80,
+        status: "open",
+        source: { quiz, attempt: attemptId },
+        questionIndex: 4,
+        metadata: { questionIndex: 4 },
+      })
+    ).rejects.toMatchObject({ code: 11000 });
+  });
+
+  test("repeated replay leaves no extra open row", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+    const analyses = [
+      mistake({ topic: "General", questionIndex: 1 }),
+      mistake({ topic: "General", questionIndex: 4 }),
+    ];
+
+    await enqueue(attemptId, analyses);
+    const afterFirst = (await openItems()).length;
+
+    await enqueue(attemptId, analyses);
+    await enqueue(attemptId, analyses);
+
+    expect(afterFirst).toBe(2);
+    expect(await openItems()).toHaveLength(afterFirst);
+  });
+
+  test("a legacy row for another question is not adopted", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, 4);
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.filter((i) => i.questionIndex == null)).toHaveLength(1);
+  });
+
+  test("a legacy row with no question in its metadata is never adopted", async () => {
+    const attemptId = oid();
+    await legacyItem(attemptId, undefined);
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.filter((i) => i.questionIndex == null)).toHaveLength(1);
+  });
+
+  test("adoption does not cross attempts", async () => {
+    const first = oid();
+    const second = oid();
+    await legacyItem(first, 4);
+
+    await enqueue(second, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.filter((i) => String(i.source.attempt) === String(first) && i.questionIndex == null))
+      .toHaveLength(1);
+    expect(items.filter((i) => String(i.source.attempt) === String(second))).toHaveLength(1);
+  });
+
+  test("adoption preserves a flashcard link on the adopted row", async () => {
+    const attemptId = oid();
+    const setId = oid();
+    await legacyItem(attemptId, 4);
+    await ReviewQueue.updateMany(
+      { user, itemType: "failed_question", status: "open", "source.attempt": attemptId },
+      { $set: { "source.flashcardSet": setId } }
+    );
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const [item] = await openItems();
+    expect(String(item.source.flashcardSet)).toBe(String(setId));
+    expect(item.questionIndex).toBe(4);
+  });
+
+  test("the topic item types are unaffected by adoption", async () => {
+    const build = () =>
+      ReviewQueue.findOneAndUpdate(
+        { user, itemType: "weak_topic", topic: "Deadlock", status: "open" },
+        {
+          $set: {
+            user, itemType: "weak_topic", topic: "Deadlock",
+            title: "Review weak topic: Deadlock", source: {}, metadata: {},
+          },
+          $setOnInsert: { createdAt: new Date() },
+        },
+        { upsert: true, new: true }
+      );
+
+    await build();
+    await build();
+    await build();
+
+    expect(await openItems()).toHaveLength(1);
+  });
+
   // ─── The deployment trap ───────────────────────────────────────────────────
   //
   // Mongoose's automatic index build only ever calls createIndex, so widening the

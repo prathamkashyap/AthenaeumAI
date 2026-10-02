@@ -85,7 +85,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   reviewQueueFind.mockReturnValue(queryOf([]));
   reviewQueueCountDocuments.mockResolvedValue(0);
-  reviewQueueFindOneAndUpdate.mockResolvedValue({ _id: "rq-1" });
+  // Models reality rather than always resolving truthy: the identifying lookup
+  // runs without `upsert` and normally finds nothing, and only the creating call
+  // produces a document. A double that always returned a row would make the
+  // service stop at the lookup and never reach the upsert at all.
+  reviewQueueFindOneAndUpdate.mockImplementation(async (filter, update, options = {}) =>
+    options?.upsert ? { _id: "rq-1", ...update.$set } : null
+  );
   flashcardSetFind.mockReturnValue(queryOf([]));
   userProgressFindOne.mockReturnValue(queryOf(null));
   learningEventCreate.mockResolvedValue({ _id: "event-1" });
@@ -130,14 +136,26 @@ const withQueue = (items, total = items.length) => {
   reviewQueueCountDocuments.mockResolvedValue(total);
 };
 
-/** The upsert calls the production service issued, in order. */
-const upserts = () => reviewQueueFindOneAndUpdate.mock.calls;
+/**
+ * Only the calls that can create a row. The service first looks up the identified
+ * row without upserting, so that a miss can be offered a chance to adopt a row
+ * written before `questionIndex` existed rather than duplicating it.
+ */
+const creatingCalls = () =>
+  reviewQueueFindOneAndUpdate.mock.calls.filter((call) => call[2]?.upsert);
+
+/**
+ * The upsert calls the production service issued, in order. Excluding the
+ * identifying lookups keeps one entry per logical item, as there was when a
+ * single call did both jobs.
+ */
+const upserts = () => creatingCalls();
 
 /** The document `$set` payload of the nth upsert. */
-const upsertedItem = (index) => reviewQueueFindOneAndUpdate.mock.calls[index][1].$set;
+const upsertedItem = (index) => creatingCalls()[index][1].$set;
 
 /** The match filters of the upserts issued, in order. */
-const upsertFilters = () => reviewQueueFindOneAndUpdate.mock.calls.map((call) => call[0]);
+const upsertFilters = () => creatingCalls().map((call) => call[0]);
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -546,6 +564,113 @@ describe("upsert interaction", () => {
     expect(Object.keys(filter)).not.toContain("questionIndex");
   });
 
+  // The adoption lookup is a second, differently-shaped match. Its scoping is the
+  // only thing standing between "adopt my own stale row" and "adopt somebody's",
+  // so it is asserted by its exact key set.
+  describe("the legacy adoption lookup", () => {
+    /** The identifying and adoption lookups: every call made without `upsert`. */
+    const lookups = () => reviewQueueFindOneAndUpdate.mock.calls.filter((call) => !call[2]?.upsert);
+
+    /**
+     * Only the adoption lookup, identified by the one thing unique to it: a filter
+     * that may select a row with no question identity. The identifying lookup runs
+     * for every item, so counting all lookups would not show whether adoption was
+     * attempted.
+     */
+    const adoptionLookups = () =>
+      reviewQueueFindOneAndUpdate.mock.calls.filter(
+        (call) => !call[2]?.upsert && call[0]["metadata.questionIndex"] !== undefined
+      );
+
+    const enqueueOnce = (questionIndex = 4) =>
+      enqueueFailedQuestionItems({
+        userId: USER_ID,
+        quiz: { _id: "quiz-1", subject: "Operating Systems" },
+        attempt: { _id: "attempt-1" },
+        mistakeAnalyses: [{ questionIndex, topic: "General" }],
+      });
+
+    test("is attempted only after the identified lookup misses", async () => {
+      await enqueueOnce();
+
+      const [identified, adoption] = lookups();
+      expect(identified[0]["source.attempt"]).toBe("attempt-1");
+      expect(identified[0].questionIndex).toBe(4);
+      // The adoption lookup is the second match, and it is the only one that may
+      // select a row lacking question identity.
+      expect(adoption[0].questionIndex).toBeNull();
+    });
+
+    test("is scoped to the same user, quiz, attempt, topic and item type", async () => {
+      await enqueueOnce();
+
+      const adoption = lookups()[1][0];
+      expect(adoption.user).toBe(USER_ID);
+      expect(adoption.itemType).toBe("failed_question");
+      expect(adoption.status).toBe("open");
+      expect(adoption.topic).toBe("General");
+      expect(adoption["source.quiz"]).toBe("quiz-1");
+      expect(adoption["source.attempt"]).toBe("attempt-1");
+    });
+
+    test("selects only rows whose stored metadata names the same question", async () => {
+      await enqueueOnce(3);
+
+      expect(lookups()[1][0]["metadata.questionIndex"]).toBe(3);
+    });
+
+    test("cannot select a row that already has question identity", async () => {
+      await enqueueOnce();
+
+      // `questionIndex: null` is what excludes an identified row: MongoDB
+      // equality-matches absent and null identically, and an identified row holds
+      // a number there.
+      expect(lookups()[1][0].questionIndex).toBeNull();
+    });
+
+    test("never upserts, so it cannot create a row", async () => {
+      await enqueueOnce();
+
+      expect(lookups()[1][2].upsert).toBeUndefined();
+    });
+
+    test("is not attempted for items with no question identity", async () => {
+      withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
+      await rebuildReviewQueueForUser(USER_ID);
+
+      // A topic item is identified and then created, with no adoption attempt, so
+      // its identity and deduplication are untouched.
+      expect(adoptionLookups()).toHaveLength(0);
+      expect(creatingCalls().length).toBeGreaterThan(0);
+    });
+
+    test("is not attempted for the flashcard item types either", async () => {
+      withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
+      flashcardSetFind.mockReturnValue(
+        queryOf([
+          set("set-1", "Deck", [card("c1", "Deadlock", { nextReviewAt: beforeNow(MS_DAY) })]),
+        ]),
+      );
+      await rebuildReviewQueueForUser(USER_ID);
+
+      expect(adoptionLookups()).toHaveLength(0);
+    });
+
+    test("writes the same payload as an ordinary upsert, so adoption is not a lesser update", async () => {
+      await enqueueOnce();
+
+      // Compared on $set alone: the creating call additionally carries
+      // $setOnInsert, which adoption must not, since it never creates.
+      expect(lookups()[1][1].$set).toEqual(creatingCalls()[0][1].$set);
+    });
+
+    test("stamps nothing on adoption, because it cannot create", async () => {
+      await enqueueOnce();
+
+      expect(lookups()[1][1].$setOnInsert).toBeUndefined();
+    });
+  });
+
   test("gives two attempts on the same quiz distinct identities", async () => {
     const enqueue = (attemptId) =>
       enqueueFailedQuestionItems({
@@ -599,13 +724,19 @@ describe("upsert interaction", () => {
   test("requests an upsert that returns the updated document", async () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     await rebuildReviewQueueForUser(USER_ID);
-    expect(reviewQueueFindOneAndUpdate.mock.calls[0][2]).toEqual({ upsert: true, new: true });
+    expect(creatingCalls().length).toBeGreaterThan(0);
+    expect(creatingCalls()[0][2]).toEqual({ upsert: true, new: true });
   });
 
   test("stamps createdAt only when the item is inserted", async () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     await rebuildReviewQueueForUser(USER_ID);
-    const [, update] = reviewQueueFindOneAndUpdate.mock.calls[0];
+    // The identifying lookup must not stamp anything; only the creating call does.
+    const lookups = reviewQueueFindOneAndUpdate.mock.calls.filter((call) => !call[2]?.upsert);
+    expect(lookups.length).toBeGreaterThan(0);
+    lookups.forEach(([, update]) => expect(update.$setOnInsert).toBeUndefined());
+
+    const [, update] = creatingCalls()[0];
     expect(update.$setOnInsert).toEqual({ createdAt: NOW });
   });
 
@@ -622,8 +753,18 @@ describe("upsert interaction", () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     await rebuildReviewQueueForUser(USER_ID);
     // Production only ever $sets or $setOnInserts; nothing is deleted or closed.
-    const operations = reviewQueueFindOneAndUpdate.mock.calls.map((call) => Object.keys(call[1]));
-    operations.forEach((keys) => expect(keys.sort()).toEqual(["$set", "$setOnInsert"]));
+    // A lookup carries $set alone, a creating call carries both.
+    const operations = reviewQueueFindOneAndUpdate.mock.calls.map(
+      (call) => Object.keys(call[1]).sort().join(","),
+    );
+    operations.forEach((keys) => {
+      expect([ "$set", "$set,$setOnInsert" ]).toContain(keys);
+    });
+    // Nothing is ever unset, which is how a post-creation link survives replay.
+    for (const [, update] of reviewQueueFindOneAndUpdate.mock.calls) {
+      expect(update.$unset).toBeUndefined();
+      expect(update.$pull).toBeUndefined();
+    }
     expect(reviewQueueFind.mock.results.length).toBeGreaterThan(0);
   });
 });
