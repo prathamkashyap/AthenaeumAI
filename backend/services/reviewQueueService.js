@@ -65,12 +65,39 @@ const upsertOpenQueueItem = async (item) => {
     if (source?.[key]) $set[`source.${key}`] = source[key];
   }
 
+  // A snooze is "push the date forward and demote the priority". Carrying those two
+  // fields in $max/$min rather than $set means a replay cannot undo it: the later
+  // date and the lower priority win, which is exactly what the learner asked for,
+  // while every other field is still refreshed normally.
+  //
+  // Scoped to the attempt-scoped item types deliberately. A topic item's dueAt is
+  // recomputed from progress on every rebuild and must keep being overwritten; a
+  // flashcard item's dueAt mirrors the card's own SM-2 schedule and must keep
+  // tracking it. Only a failed question is snoozed by the learner and has no
+  // scheduler behind it.
+  //
+  // Applied to every write below, not only the creating one: during a replay the
+  // identifying lookup is the write that lands on the existing row, so omitting
+  // these operators there would preserve the snooze only on the inserting paths.
+  //
+  // Done inside the same atomic findOneAndUpdate rather than by reading the row
+  // first: no extra round trip, and no window in which a snooze landing between a
+  // read and a write would still be overwritten. A field may not appear in two
+  // operators, so these two leave $set for these item types only.
+  const update = { $set };
+  if (ATTEMPT_SCOPED_ITEM_TYPES.has(item.itemType)) {
+    const { dueAt, priority, ...withoutScheduling } = $set;
+    update.$set = withoutScheduling;
+    update.$max = { dueAt };
+    update.$min = { priority };
+  }
+
   const hasQuestionIdentity =
     item.questionIndex !== undefined && item.questionIndex !== null;
 
   // 1. The ordinary path. Split from the upsert so a miss is observable: an upsert
   //    would create the row we may still be able to adopt instead.
-  const identified = await ReviewQueue.findOneAndUpdate(filter, { $set }, { new: true });
+  const identified = await ReviewQueue.findOneAndUpdate(filter, update, { new: true });
   if (identified) return identified;
 
   // 2. A row written before `questionIndex` became part of the identity carries
@@ -98,7 +125,7 @@ const upsertOpenQueueItem = async (item) => {
         questionIndex: null,
         "metadata.questionIndex": item.questionIndex,
       },
-      { $set },
+      update,
       { new: true }
     );
     if (adopted) return adopted;
@@ -109,7 +136,7 @@ const upsertOpenQueueItem = async (item) => {
   //    than duplicated.
   return ReviewQueue.findOneAndUpdate(
     filter,
-    { $set, $setOnInsert: { createdAt: new Date() } },
+    { ...update, $setOnInsert: { createdAt: new Date() } },
     { upsert: true, new: true }
   );
 };

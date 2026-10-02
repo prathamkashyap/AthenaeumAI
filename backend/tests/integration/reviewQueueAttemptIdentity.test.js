@@ -53,7 +53,7 @@ try {
   console.warn(`[reviewQueueAttemptIdentity] MongoDB unavailable, skipping: ${error.message}`);
 }
 
-const { enqueueFailedQuestionItems } = await import("../../services/reviewQueueService.js");
+const { enqueueFailedQuestionItems, snoozeReviewQueueItem } = await import("../../services/reviewQueueService.js");
 
 afterAll(async () => {
   if (connected) {
@@ -563,6 +563,109 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     await build();
 
     expect(await openItems()).toHaveLength(1);
+  });
+
+  // ─── A learner snooze survives a real replay ─────────────────────────────────
+
+  const isFuture = (d) => new Date(d).getTime() > Date.now();
+
+  const snooze = async (questionIndex, hours = 48) => {
+    const item = (await openItems()).find((i) => i.questionIndex === questionIndex);
+    await snoozeReviewQueueItem({ userId: user, itemId: item._id, hours });
+    return item._id;
+  };
+
+  test("a snoozed question keeps its future due date and demoted priority", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+    const id = await snooze(4, 48);
+
+    const before = await ReviewQueue.findById(id).lean();
+    expect(isFuture(before.dueAt)).toBe(true);
+    expect(before.priority).toBe(40);
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const after = await ReviewQueue.findById(id).lean();
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(new Date(after.dueAt).getTime()).toBe(new Date(before.dueAt).getTime());
+    expect(after.priority).toBe(40);
+  });
+
+  test("three replays leave exactly one open row, still snoozed", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+    const id = await snooze(4);
+
+    for (let i = 0; i < 3; i++) {
+      await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+    }
+
+    expect(await openItems()).toHaveLength(1);
+    const item = await ReviewQueue.findById(id).lean();
+    expect(isFuture(item.dueAt)).toBe(true);
+    expect(item.priority).toBe(40);
+  });
+
+  test("an unsnoozed question still gets the producer's scheduling", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+
+    const [item] = await openItems();
+    expect(isFuture(item.dueAt)).toBe(false);
+    expect(item.priority).toBe(80);
+  });
+
+  test("a snoozed question does not protect its sibling", async () => {
+    const attemptId = oid();
+    const analyses = [
+      mistake({ topic: "General", questionIndex: 1 }),
+      mistake({ topic: "General", questionIndex: 4 }),
+    ];
+    await enqueue(attemptId, analyses);
+    await snooze(4);
+
+    await enqueue(attemptId, analyses);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    const snoozedItem = items.find((i) => i.questionIndex === 4);
+    const sibling = items.find((i) => i.questionIndex === 1);
+    expect(isFuture(snoozedItem.dueAt)).toBe(true);
+    expect(snoozedItem.priority).toBe(40);
+    expect(isFuture(sibling.dueAt)).toBe(false);
+    expect(sibling.priority).toBe(80);
+  });
+
+  test("another attempt's identical question is unaffected", async () => {
+    await enqueue(oid(), [mistake({ topic: "General", questionIndex: 4 })]);
+    await snooze(4);
+
+    await enqueue(oid(), [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.filter((i) => isFuture(i.dueAt))).toHaveLength(1);
+  });
+
+  test("a snoozed question keeps its flashcard link across replay", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+    const id = await snooze(4);
+    const setId = oid();
+    await ReviewQueue.updateMany(
+      { user, itemType: "failed_question", status: "open", "source.attempt": attemptId },
+      { $set: { "source.flashcardSet": setId } }
+    );
+
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const item = await ReviewQueue.findById(id).lean();
+    expect(String(item.source.flashcardSet)).toBe(String(setId));
+    expect(isFuture(item.dueAt)).toBe(true);
+    expect(item.priority).toBe(40);
   });
 
   // ─── The deployment trap ───────────────────────────────────────────────────

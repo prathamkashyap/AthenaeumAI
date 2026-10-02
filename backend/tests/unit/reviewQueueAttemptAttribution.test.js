@@ -57,11 +57,52 @@ const applySet = (doc, set) => {
   return doc;
 };
 
+/**
+ * `$max`/`$min` keep the larger / smaller of the stored and supplied value and set
+ * the field outright when it is absent -- the rule MongoDB applies, and the same
+ * one the unique index already relies on for nulls.
+ */
+const applyBound = (doc, bound, keepLarger) => {
+  for (const [path, value] of Object.entries(bound || {})) {
+    const parts = path.split(".");
+    let cursor = doc;
+    for (const part of parts.slice(0, -1)) {
+      if (cursor[part] == null) cursor[part] = {};
+      cursor = cursor[part];
+    }
+    const key = parts.at(-1);
+    const stored = cursor[key];
+    if (stored === undefined || stored === null) {
+      cursor[key] = value;
+    } else if (stored instanceof Date || value instanceof Date) {
+      cursor[key] = new Date(keepLarger
+        ? Math.max(new Date(stored).getTime(), new Date(value).getTime())
+        : Math.min(new Date(stored).getTime(), new Date(value).getTime()));
+    } else {
+      cursor[key] = keepLarger
+        ? Math.max(Number(stored), Number(value))
+        : Math.min(Number(stored), Number(value));
+    }
+  }
+};
+
+/**
+ * MongoDB reads an update document whose keys are not operators as shorthand for
+ * `$set`. `snoozeReviewQueueItem` sends `{ dueAt, priority }` that way, so the
+ * store must as well or a snoozed item is never actually written here.
+ */
+const asSet = (update) => {
+  const hasOperator = Object.keys(update).some((key) => key.startsWith("$"));
+  return hasOperator ? update.$set || {} : update;
+};
+
 reviewQueueFindOneAndUpdate.mockImplementation(async (filter, update, options = {}) => {
   const found = store.queueItems.find((item) => matches(item, filter));
   if (found) {
     // Dotted paths included: the service writes `source.*` key by key.
-    applySet(found, update.$set);
+    applySet(found, asSet(update));
+    applyBound(found, update.$max, true);
+    applyBound(found, update.$min, false);
     return found;
   }
   if (!options.upsert) return null;
@@ -69,8 +110,10 @@ reviewQueueFindOneAndUpdate.mockImplementation(async (filter, update, options = 
   // has to apply it the way Mongoose would or nothing would read as "open".
   const created = applySet(
     { _id: `rq-${store.queueItems.length + 1}`, status: "open" },
-    { ...update.$set, ...(update.$setOnInsert ?? {}) }
+    { ...asSet(update), ...(update.$setOnInsert ?? {}) }
   );
+  applyBound(created, update.$max, true);
+  applyBound(created, update.$min, false);
   store.queueItems.push(created);
   return created;
 });
@@ -109,9 +152,8 @@ jest.unstable_mockModule("../../models/FlashcardSet.js", () => ({ default: { fin
 jest.unstable_mockModule("../../models/UserProgress.js", () => ({ default: { findOne: userProgressFindOne } }));
 jest.unstable_mockModule("../../models/LearningEvent.js", () => ({ default: { create: jest.fn() } }));
 
-const { enqueueFailedQuestionItems, rebuildReviewQueueForUser } = await import(
-  "../../services/reviewQueueService.js"
-);
+const { enqueueFailedQuestionItems, rebuildReviewQueueForUser, snoozeReviewQueueItem: snoozeQueueItem } =
+  await import("../../services/reviewQueueService.js");
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -626,6 +668,139 @@ describe("item types with no question keep their identity", () => {
 
     expect(openItems("failed_question")).toHaveLength(2);
     expect(openItems("weak_topic")).toHaveLength(1);
+  });
+});
+
+// ─── A learner snooze survives replay ─────────────────────────────────────────
+
+/**
+ * `snoozeReviewQueueItem` pushes `dueAt` forward and forces `priority` to 40, and
+ * `SYNC_ATTEMPT` re-runs the failed-question enqueue on every delivery. Before
+ * this was addressed, a single redelivery -- or the learner's own retry on a failed
+ * job -- put the item straight back in the queue while the page still showed
+ * "Snoozed until <date>" with both buttons disabled.
+ */
+describe("a snoozed question survives replay", () => {
+  const isFuture = (d) => new Date(d).getTime() > Date.now();
+
+  const twoQuestions = () => [
+    mistake({ topic: "General", questionIndex: 1, misconception: "question one" }),
+    mistake({ topic: "General", questionIndex: 4, misconception: "question four" }),
+  ];
+
+  const snooze = (questionIndex, hours = 48) =>
+    snoozeQueueItem({
+      userId: USER,
+      itemId: openItems("failed_question").find((i) => i.questionIndex === questionIndex)._id,
+      hours,
+    });
+
+  test("the future due date and the demoted priority both survive a replay", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await snooze(4);
+    const before = byAttempt("attempt-1")[0];
+    expect(isFuture(before.dueAt)).toBe(true);
+    expect(before.priority).toBe(40);
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const after = byAttempt("attempt-1")[0];
+    expect(new Date(after.dueAt).getTime()).toBe(new Date(before.dueAt).getTime());
+    expect(after.priority).toBe(40);
+  });
+
+  test("repeated replay neither resurfaces the item nor accumulates rows", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await snooze(4);
+    const before = byAttempt("attempt-1")[0];
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+
+    expect(openItems("failed_question")).toHaveLength(1);
+    expect(isFuture(byAttempt("attempt-1")[0].dueAt)).toBe(true);
+    expect(new Date(byAttempt("attempt-1")[0].dueAt).getTime()).toBe(new Date(before.dueAt).getTime());
+    expect(byAttempt("attempt-1")[0].priority).toBe(40);
+  });
+
+  test("only the snoozed question is preserved; its sibling still refreshes", async () => {
+    await enqueue("attempt-1", twoQuestions());
+    await snooze(4);
+
+    await enqueue("attempt-1", twoQuestions());
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    expect(isFuture(byAttempt("attempt-1").find((i) => i.questionIndex === 4).dueAt)).toBe(true);
+    expect(byAttempt("attempt-1").find((i) => i.questionIndex === 4).priority).toBe(40);
+
+    const sibling = byAttempt("attempt-1").find((i) => i.questionIndex === 1);
+    expect(isFuture(sibling.dueAt)).toBe(false);
+    expect(sibling.priority).toBe(80);
+  });
+
+  test("an unsnoozed question still receives the producer's scheduling", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 1 })]);
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 1 })]);
+
+    const item = byAttempt("attempt-1")[0];
+    expect(isFuture(item.dueAt)).toBe(false);
+    expect(item.priority).toBe(80);
+  });
+
+  test("another attempt's identical question is unaffected", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await snooze(4);
+
+    await enqueue("attempt-2", [mistake({ topic: "General", questionIndex: 4 })]);
+
+    expect(openItems("failed_question")).toHaveLength(2);
+    expect(isFuture(byAttempt("attempt-1")[0].dueAt)).toBe(true);
+    expect(byAttempt("attempt-2")[0].priority).toBe(80);
+    expect(isFuture(byAttempt("attempt-2")[0].dueAt)).toBe(false);
+  });
+
+  test("the producer still refreshes the diagnosis of a snoozed question", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4, misconception: "first" })]);
+    await snooze(4);
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4, misconception: "refreshed" })]);
+
+    const item = byAttempt("attempt-1")[0];
+    expect(item.metadata.misconception).toBe("refreshed");
+    expect(isFuture(item.dueAt)).toBe(true);
+    expect(item.priority).toBe(40);
+  });
+
+  test("a snoozed question keeps its flashcard link across replay", async () => {
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+    await linkFlashcards("attempt-1", "set-1");
+    await snooze(4);
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const item = byAttempt("attempt-1")[0];
+    expect(String(item.source.flashcardSet)).toBe("set-1");
+    expect(isFuture(item.dueAt)).toBe(true);
+  });
+
+  test("adopting a collapsed row still leaves the schedule to the producer", async () => {
+    store.queueItems.push({
+      _id: "rq-legacy", status: "open", user: USER, itemType: "failed_question",
+      subject: "Operating Systems", topic: "General", title: "Fix misconception: General",
+      priority: 80, dueAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+      source: { quiz: "quiz-1", attempt: "attempt-1", flashcardSet: null, flashcardId: null },
+      questionIndex: null,
+      metadata: { questionIndex: 4, misconception: "legacy" },
+    });
+
+    await enqueue("attempt-1", [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const item = openItems("failed_question")[0];
+    expect(item.questionIndex).toBe(4);
+    expect(isFuture(item.dueAt)).toBe(false);
+    expect(item.priority).toBe(80);
   });
 });
 

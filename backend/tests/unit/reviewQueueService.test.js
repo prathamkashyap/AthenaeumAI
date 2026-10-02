@@ -812,8 +812,10 @@ describe("enqueueFailedQuestionItems", () => {
       attempt: { _id: "attempt-1" },
       mistakeAnalyses: [analysis()],
     });
-    expect(upsertedItem(0).priority).toBe(80);
-    expect(upsertedItem(0).dueAt).toEqual(NOW);
+    // Scheduling rides in $min/$max for a failed question so a replay cannot undo
+    // a snooze; the intent is unchanged, only the operator that carries it.
+    expect(creatingCalls()[0][1].$min.priority).toBe(80);
+    expect(creatingCalls()[0][1].$max.dueAt).toEqual(NOW);
   });
 
   test("links the item to the quiz and the attempt", async () => {
