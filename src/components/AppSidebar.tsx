@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap, Bot } from "lucide-react";
+import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap, Bot, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import {
@@ -12,8 +12,8 @@ const mainNav = [
   { title: "Library", url: "/library", icon: Upload },
   { title: "Assessments", url: "/assessments", icon: BookOpen },
   { title: "Practice", url: "/practice", icon: Layers },
+  { title: "Today's Review", url: "/review", icon: CalendarCheck },
   { title: "AI Tutor", url: "/tutor", icon: Bot },
-  { title: "Question Bank", url: "/question-bank", icon: ScrollText },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
 

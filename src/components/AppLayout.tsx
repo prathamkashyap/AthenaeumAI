@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
-import { StarryBackground } from "./StarryBackground";
+import { AuroraBackground } from "./AuroraBackground";
 import { ThemeToggle } from "./ThemeToggle";
 import { Search, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider>
-      <StarryBackground />
+      <AuroraBackground />
       <div className="min-h-screen flex w-full bg-transparent relative z-10">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">

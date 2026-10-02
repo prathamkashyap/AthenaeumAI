@@ -36,7 +36,7 @@ const flashcardSetSchema = new mongoose.Schema(
     },
     sourceType: {
       type: String,
-      enum: ["material", "quiz", "weak-topics"],
+      enum: ["material", "quiz", "weak-topics", "mistakes"],
       required: true,
     },
     studyMaterial: {
@@ -48,6 +48,14 @@ const flashcardSetSchema = new mongoose.Schema(
     quiz: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Quiz",
+      default: null,
+      index: true,
+    },
+    // The attempt a mistake-review set was built from, when there was one. A
+    // quiz-sourced set has none, since it is not tied to any single attempt.
+    attempt: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "QuizAttempt",
       default: null,
       index: true,
     },

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "typecheck": "tsc -b",
     "test:watch": "vitest",
     "seed:demo": "npm --prefix backend run seed:demo",
     "verify:demo": "npm --prefix backend run verify:demo",

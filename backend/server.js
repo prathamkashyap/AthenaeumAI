@@ -22,6 +22,7 @@ import reviewQueueRoutes from "./routes/reviewQueueRoutes.js";
 import tutorRoutes from "./routes/tutorRoutes.js";
 import healthRoutes from "./routes/healthRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import backgroundJobRoutes from "./routes/backgroundJobRoutes.js";
 import logger from "./utils/logger.js";
 import env from "./config/env.js";
 import { globalErrorHandler } from "./middleware/errorHandler.js";
@@ -70,7 +71,12 @@ app.use(compression());
 
 const allowedOrigins = env.NODE_ENV === "production"
   ? (process.env.ALLOWED_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean)
-  : ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"];
+  : [
+    "http://localhost:8080",
+    "http://localhost:8081",
+    "http://localhost:3000",
+    "http://127.0.0.1:8080"
+  ];
 
 app.use(
   cors({
@@ -176,6 +182,7 @@ app.use("/api/v1/review-queue",    reviewQueueRoutes);
 app.use("/api/v1/tutor",           aiLimiter, tutorRoutes);
 app.use("/api/v1/health",          healthRoutes);
 app.use("/api/v1/notifications",   notificationRoutes);
+app.use("/api/v1/jobs",            backgroundJobRoutes);
 
 // Only API V1 is supported now
 

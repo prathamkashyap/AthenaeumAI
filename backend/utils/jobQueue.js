@@ -2,6 +2,11 @@ import { Queue } from "bullmq";
 import Redis from "ioredis";
 import logger from "./logger.js";
 import { QueueEnqueueError } from "./errors.js";
+import {
+  createBackgroundJob,
+  markJobQueued,
+  markJobNotScheduled,
+} from "../services/backgroundJobService.js";
 
 export const BACKGROUND_QUEUE_NAME = "athenaeum-background-jobs";
 
@@ -79,5 +84,63 @@ export const createJobQueue = ({ queue = backgroundQueue, testMode = isQueueDisa
 });
 
 export const jobQueue = createJobQueue();
+
+/**
+ * Schedules background work as a tracked application-level job.
+ *
+ * The ordering is the whole point of this helper, and it is fixed here rather than
+ * at each call site so no caller can get it wrong:
+ *
+ *   1. a job record is created as `pending` — it exists, but nothing is claimed
+ *   2. the queue is asked to accept the work
+ *   3. on success the record becomes `queued`; on refusal it becomes
+ *      `not_scheduled`
+ *
+ * A job is therefore never reported as queued when the enqueue actually failed,
+ * and a refusal leaves a durable, queryable trace instead of a silent gap. This
+ * is deliberately not a transactional outbox: the business record was committed
+ * first, and a failed enqueue is surfaced as `not_scheduled` for operational
+ * recovery rather than being papered over.
+ *
+ * @returns {Promise<{ job: object|null, scheduled: boolean, error: Error|null }>}
+ */
+export const enqueueTrackedJob = async ({
+  createJobQueue: createJobQueueImpl = jobQueue,
+  user,
+  type,
+  data,
+  resource = {},
+  deduplicationId,
+  name,
+}) => {
+  const job = await createBackgroundJob({ user, type, resource });
+
+  try {
+    const queued = await createJobQueueImpl.enqueue(name, { type, data, jobId: String(job._id) }, {
+      ...(deduplicationId ? { deduplicationId } : {}),
+    });
+    await markJobQueued(job._id, queued?.id ?? null);
+    return { job, scheduled: true, error: null };
+  } catch (error) {
+    // Only a queue refusal means "committed but unscheduled". Any other failure
+    // is a real fault and is rethrown, so a bug is never recorded as a scheduling
+    // problem and never presented to the client as one.
+    if (!(error instanceof QueueEnqueueError)) throw error;
+
+    // The refusal is recorded on the job, and the original error is still returned
+    // so the caller can log it and decide what its response should say.
+    await markJobNotScheduled(job._id, {
+      code: "QUEUE_ENQUEUE_FAILED",
+      message: "Background work could not be scheduled.",
+    }).catch((recordError) => {
+      logger.error("[JobQueue] Failed to record an unscheduled job.", {
+        error: recordError.message,
+      });
+    });
+    return { job, scheduled: false, error };
+  }
+};
+
+
 
 export default jobQueue;

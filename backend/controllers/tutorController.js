@@ -139,7 +139,7 @@ export const askTutorStream = async (req, res, next) => {
 
     try {
       for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content || "";
+        const text = chunk?.content || "";
         if (text) {
           fullAnswer += text;
           res.write(`data: ${text}\n\n`);

@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useQuiz, Question, MistakeAnalysis } from "@/context/QuizContext";
+import { useQuiz, Question, MistakeAnalysis, BackgroundProcessing } from "@/context/QuizContext";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -28,6 +28,9 @@ const AttemptAssessment = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Set when the attempt could not be persisted. The score exists locally but the
+  // backend never stored it, so the result page must not be shown.
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Fetch quiz if not in context
   useEffect(() => {
@@ -91,32 +94,60 @@ const AttemptAssessment = () => {
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    let score = 0;
-    const finalAnswers = answers.map((a) => (a === null ? -1 : a));
+    try {
+      let score = 0;
+      const finalAnswers = answers.map((a) => (a === null ? -1 : a));
 
-    finalAnswers.forEach((ans, i) => {
-      if (ans === questions[i]?.answer) score++;
-    });
+      finalAnswers.forEach((ans, i) => {
+        if (ans === questions[i]?.answer) score++;
+      });
 
-    // Save attempt to backend
-    let savedAttempt: { mistakeAnalyses?: MistakeAnalysis[] } | void;
-    if (currentQuiz?.quizId) {
-      savedAttempt = await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers, timeElapsed);
+      // Save attempt to backend
+      let savedAttempt:
+        | { attemptId?: string; mistakeAnalyses?: MistakeAnalysis[]; backgroundProcessing?: BackgroundProcessing | null }
+        | void;
+      if (currentQuiz?.quizId) {
+        savedAttempt = await saveAttempt(currentQuiz.quizId, score, questions.length, finalAnswers, timeElapsed);
+      }
+
+      setResult({
+        score,
+        total: questions.length,
+        answers: finalAnswers,
+        questions,
+        difficulty,
+        title,
+        quizId: currentQuiz?.quizId || "",
+        mistakeAnalyses: savedAttempt && "mistakeAnalyses" in savedAttempt ? savedAttempt.mistakeAnalyses || [] : [],
+        // Carried so the result page can offer a mistake-review set, which is
+        // generated from this specific attempt. Undefined when the attempt was not
+        // persisted, in which case no such set can be built.
+        attemptId: savedAttempt && "attemptId" in savedAttempt ? savedAttempt.attemptId : undefined,
+        // Carried so the result page can say whether the attempt's adaptive effects
+        // were applied. The attempt is committed before `SYNC_ATTEMPT` is
+        // scheduled, so a job that was never scheduled leaves progress, learning
+        // events and the review queue permanently without this attempt — and unlike
+        // material indexing there is no read-time path that would apply them later.
+        backgroundProcessing:
+          savedAttempt && "backgroundProcessing" in savedAttempt
+            ? savedAttempt.backgroundProcessing ?? null
+            : null,
+      });
+
+      navigate(`/assessments/${id}/result`);
+    } catch (err) {
+      // Nothing was persisted, so there is no result to show. Saying so beats
+      // rendering a score the backend never stored.
+      setSubmitError(
+        err instanceof Error ? err.message : "Your attempt could not be saved. Please try again.",
+      );
+    } finally {
+      // Previously never reset, because the page always navigated away. Now that a
+      // failed save stays put, leaving it set would disable the button for good.
+      setIsSubmitting(false);
     }
-
-    setResult({
-      score,
-      total: questions.length,
-      answers: finalAnswers,
-      questions,
-      difficulty,
-      title,
-      quizId: currentQuiz?.quizId || "",
-      mistakeAnalyses: savedAttempt && "mistakeAnalyses" in savedAttempt ? savedAttempt.mistakeAnalyses || [] : [],
-    });
-
-    navigate(`/assessments/${id}/result`);
   };
 
   // Loading state
@@ -257,6 +288,21 @@ const AttemptAssessment = () => {
               >
                 <ChevronLeft className="h-4 w-4 mr-1" /> Previous
               </Button>
+
+              {/*
+                * Shown when the attempt could not be stored. Without this the
+                * learner would simply be returned to the quiz with no idea that
+                * their score had been discarded.
+                */}
+              {submitError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+                >
+                  {submitError} Your answers are still here — press submit again to save this
+                  attempt.
+                </div>
+              )}
 
               {current === questions.length - 1 ? (
                 <Button

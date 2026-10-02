@@ -7,6 +7,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/lib/api";
 import {
+  AlertTriangle,
   CheckCircle2,
   XCircle,
   ChevronDown,
@@ -25,10 +26,15 @@ import {
 
 const ResultAssessment = () => {
   const navigate = useNavigate();
-  const { lastResult, clearQuiz } = useQuiz();
+  const { lastResult, clearQuiz, retryBackgroundJob } = useQuiz();
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [isCreatingDeck, setIsCreatingDeck] = useState(false);
+  const [isCreatingMistakeDeck, setIsCreatingMistakeDeck] = useState(false);
+  const [isRetryingJob, setIsRetryingJob] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [mistakeDeckError, setMistakeDeckError] = useState<string | null>(null);
+
 
   const {
     score = 0,
@@ -39,7 +45,125 @@ const ResultAssessment = () => {
     title = "Quiz",
     quizId = "",
     mistakeAnalyses = [],
+    attemptId = undefined,
+    backgroundProcessing = null,
   } = lastResult || {};
+
+  /**
+   * Re-runs the background work for the attempt already on screen.
+   *
+   * The attempt itself is untouched: the backend retries the job that belongs to
+   * it, so this repairs the first attempt rather than producing a second one. The
+   * tracked job state is replaced by whatever the server returns, and the existing
+   * polling effect resumes from there — there is no second interval here.
+   *
+   * `isRetryingJob` is what makes a double click harmless: the button is disabled
+   * for the duration, and the guard below refuses a concurrent call even if the
+   * event fires twice before React re-renders.
+   */
+  const handleRetryBackgroundJob = async () => {
+    const jobId = backgroundProcessing?.jobId;
+    if (!jobId || isRetryingJob) return;
+
+    setIsRetryingJob(true);
+    setRetryError(null);
+    try {
+      const updated = await retryBackgroundJob(jobId);
+      // A null result means the request did not complete. The terminal state is
+      // still true about the attempt, so it stays on screen and the learner is
+      // told why nothing happened.
+      if (!updated) {
+        setRetryError("Could not start the retry. Please try again.");
+      }
+    } finally {
+      setIsRetryingJob(false);
+    }
+  };
+
+  /**
+   * How each state of the attempt's background job is presented.
+   *
+   * The five states are kept apart on purpose, because collapsing any two of them
+   * states something the server did not:
+   *
+   * - `failed` means the job ran and did not finish;
+   * - `not_scheduled` means it never started, which is a different fault with a
+   *   different consequence and is the one this page exists to surface;
+   * - a `trackingError` means a status *read* failed, which says nothing at all
+   *   about the job, so the underlying status is still what gets presented.
+   *
+   * None of the unapplied states claims the effects were applied, and none
+   * promises a repair: nothing re-enqueues the job, so a retake is the only
+   * honest remedy this page can point at.
+   */
+  const ATTEMPT_JOB_PRESENTATION = {
+    pending: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Applying",
+      retryable: false,
+    },
+    queued: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Queued",
+      retryable: false,
+    },
+    running: {
+      title: "Applying this attempt",
+      detail:
+        "Your score is saved. Your topic progress and review queue are still being updated in the background.",
+      Icon: Loader2,
+      iconClass: "text-accent",
+      badgeClass: "border-accent/40 text-accent",
+      badgeText: "Running",
+      retryable: false,
+    },
+    completed: {
+      title: "This attempt is fully applied",
+      detail:
+        "Your score, topic progress and review queue have all been updated with this attempt.",
+      Icon: CheckCircle2,
+      iconClass: "text-emerald-500",
+      badgeClass: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+      badgeText: "Applied",
+      retryable: false,
+    },
+    failed: {
+      title: "This attempt's updates did not finish",
+      detail:
+        "Your score is saved, but the background job ran and did not complete, so this attempt is not reflected in your topic progress or review queue. Retrying continues processing this same attempt.",
+      Icon: XCircle,
+      iconClass: "text-destructive",
+      badgeClass: "border-destructive/40 text-destructive",
+      badgeText: "Failed",
+      // The backend can re-run the job this attempt belongs to, so the learner is
+      // offered that before anything that would create a second attempt.
+      retryable: true,
+    },
+    not_scheduled: {
+      title: "This attempt was not applied",
+      detail:
+        "Your score is saved, but the background job was never started, so this attempt is not reflected in your topic progress or review queue. It can be scheduled again, which applies this attempt rather than a new one.",
+      Icon: AlertTriangle,
+      iconClass: "text-amber-500",
+      badgeClass: "border-amber-500/50 text-amber-600 dark:text-amber-400",
+      badgeText: "Not applied",
+      retryable: true,
+    },
+  } as const;
+
+  const attemptJob = backgroundProcessing?.status
+    ? ATTEMPT_JOB_PRESENTATION[backgroundProcessing.status]
+    : null;
   const percentage = Math.round((score / Math.max(total, 1)) * 100);
 
   // Performance analysis
@@ -82,6 +206,27 @@ const ResultAssessment = () => {
 
   const displayedQuestions = showAll ? questions : questions.slice(0, 5);
 
+  /**
+   * The questions this attempt got wrong, derived from the same two arrays the
+   * result is already showing rather than from `mistakeAnalyses`. The analyses
+   * come from the AI and are absent when analysis was unavailable, whereas the
+   * score itself is always known — so a learner is never denied the offer to
+   * review a question they demonstrably missed because the AI call degraded.
+   */
+  const wrongQuestionIndices = useMemo(
+    () =>
+      questions
+        .map((q, i) => ({ q, i }))
+        .filter(({ q, i }) => answers[i] !== undefined && answers[i] !== q.answer)
+        .map(({ i }) => i),
+    [questions, answers]
+  );
+
+  // A mistake set is generated from the saved attempt, so it needs the attempt's
+  // id. Without one there is nothing to generate from, and offering the action
+  // would only produce a guaranteed failure.
+  const canReviewMistakes = Boolean(attemptId) && wrongQuestionIndices.length > 0;
+
   const createFlashcardsFromQuiz = async () => {
     setIsCreatingDeck(true);
     try {
@@ -92,6 +237,47 @@ const ResultAssessment = () => {
       if (response.ok) navigate("/flashcards");
     } finally {
       setIsCreatingDeck(false);
+    }
+  };
+
+  /**
+   * Builds a review set from the questions this attempt got wrong, rather than
+   * from the whole quiz. The "Make Flashcards" action above rehearses every
+   * question including the ones already answered correctly, which is a different
+   * and much less useful thing after a scored attempt.
+   *
+   * This runs after the attempt is already recorded and the result is on screen,
+   * so a failure here is reported to the learner and nothing else. It cannot
+   * affect the attempt: the attempt was saved by a separate, earlier request, and
+   * the score above is unaffected either way.
+   */
+  const createMistakeFlashcards = async () => {
+    if (!attemptId) return;
+    setIsCreatingMistakeDeck(true);
+    setMistakeDeckError(null);
+    try {
+      const response = await apiFetch("/flashcards/generate", {
+        method: "POST",
+        body: JSON.stringify({ sourceType: "mistakes", sourceId: attemptId, count: 12 }),
+      });
+      if (response.ok) {
+        navigate("/flashcards");
+      } else {
+        // A 400 is the server declining — e.g. the attempt turned out to have no
+        // incorrect answers, which the client cannot rule out on its own when the
+        // mistake analysis degraded. A 5xx is a fault. They are reported
+        // differently because the learner's next step differs: one is "there is
+        // nothing here", the other is "this failed, the result is fine".
+        setMistakeDeckError(
+          response.status === 400
+            ? "There was nothing to review from this attempt."
+            : "Could not build a review deck. Your result is unaffected — try again."
+        );
+      }
+    } catch {
+      setMistakeDeckError("Could not reach the server. Your result is unaffected — try again.");
+    } finally {
+      setIsCreatingMistakeDeck(false);
     }
   };
 
@@ -418,6 +604,27 @@ const ResultAssessment = () => {
               Make Flashcards
             </Button>
           )}
+          {/*
+            Offered only when this attempt actually recorded a mistake and has an
+            id to generate from. On a perfect attempt the review deck would be
+            built from questions the learner already answered correctly, so the
+            action is withheld rather than offered and then declined.
+          */}
+          {canReviewMistakes && (
+            <Button
+              onClick={createMistakeFlashcards}
+              disabled={isCreatingMistakeDeck}
+              className="bg-accent text-primary-foreground hover:bg-accent/90"
+            >
+              {isCreatingMistakeDeck ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Review My {wrongQuestionIndices.length}{" "}
+              {wrongQuestionIndices.length === 1 ? "Mistake" : "Mistakes"}
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={exportToCSV}
@@ -426,6 +633,65 @@ const ResultAssessment = () => {
             <Download className="h-4 w-4 mr-2" /> Export CSV
           </Button>
         </div>
+        {mistakeDeckError && (
+          <p role="alert" className="mt-3 text-sm text-rose-400">
+            {mistakeDeckError}
+          </p>
+        )}
+
+        {/*
+          Whether the attempt's adaptive effects were actually applied. The score
+          above is correct either way — the attempt is committed before the job is
+          scheduled — so this is additional information about what the score did and
+          did not feed into, not a qualification of the score itself.
+
+          Rendered for every reported state, including the healthy one, so a
+          learner is not left wondering whether the absence of a warning means
+          "applied" or merely "not reported".
+        */}
+        {attemptJob && (
+          <div
+            role="status"
+            className={`mt-4 flex items-start gap-3 rounded-lg border p-4 ${
+              backgroundProcessing?.status === "completed"
+                ? "border-emerald-500/30 bg-emerald-500/5"
+                : backgroundProcessing?.status === "failed" || backgroundProcessing?.status === "not_scheduled"
+                  ? "border-amber-500/30 bg-amber-500/5"
+                  : "border-border bg-muted/20"
+            }`}
+          >
+            <attemptJob.Icon className={`mt-0.5 h-4 w-4 shrink-0 ${attemptJob.iconClass}`} />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-medium text-foreground">{attemptJob.title}</p>
+              <p className="text-xs text-muted-foreground">{attemptJob.detail}</p>
+              {attemptJob.retryable && backgroundProcessing?.jobId && (
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isRetryingJob}
+                    onClick={handleRetryBackgroundJob}
+                  >
+                    {isRetryingJob ? "Retrying\u2026" : "Retry updating my progress"}
+                  </Button>
+                  {retryError && (
+                    <p className="mt-1 text-xs text-destructive">{retryError}</p>
+                  )}
+                </div>
+              )}
+              {backgroundProcessing?.trackingError && (
+                <p className="text-xs text-muted-foreground/80">
+                  {backgroundProcessing.trackingError} The status shown above is the last one
+                  read, not a failure of the job itself.
+                </p>
+              )}
+            </div>
+            <Badge variant="outline" className={attemptJob.badgeClass}>
+              {attemptJob.badgeText}
+            </Badge>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

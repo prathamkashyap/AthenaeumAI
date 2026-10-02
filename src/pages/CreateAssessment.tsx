@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/AppLayout";
+import { IndexingStatus } from "@/components/IndexingStatus";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  ArrowRight,
 } from "lucide-react";
 
 const DIFFICULTIES = [
@@ -60,7 +62,15 @@ const CreateAssessment = () => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const { generateQuiz, isGenerating, generationProgress, error, clearError } = useQuiz();
+  const {
+    generateQuiz,
+    isGenerating,
+    generationProgress,
+    error,
+    clearError,
+    currentQuiz,
+    backgroundProcessing,
+  } = useQuiz();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -94,11 +104,25 @@ const CreateAssessment = () => {
     if (!file) return;
 
     try {
-      const quizData = await generateQuiz(file, difficulty, questionCount);
-      navigate(`/assessments/${quizData.quizId}`);
+      await generateQuiz(file, difficulty, questionCount);
+      // Deliberately no navigation here.
+      //
+      // The upload is only half synchronous. The material and quiz are committed
+      // before this resolves, but the index that makes the material usable by the
+      // tutor is a background job whose state is not known yet. Navigating
+      // immediately would show the indexing panel for zero frames and then lose
+      // it, which is the same invisibility this work exists to remove.
+      //
+      // The learner continues explicitly instead, so the indexing state is on
+      // screen while they decide. That is one extra click on the happy path and it
+      // costs nothing: a quiz can be taken while indexing is still running.
     } catch (err) {
       // Error is handled by context
     }
+  };
+
+  const continueToQuiz = () => {
+    if (currentQuiz?.quizId) navigate(`/assessments/${currentQuiz.quizId}`);
   };
 
   const selectedDiff = DIFFICULTIES.find((d) => d.value === difficulty)!;
@@ -259,6 +283,33 @@ const CreateAssessment = () => {
             <button onClick={clearError} className="text-destructive/60 hover:text-destructive">
               <X className="h-4 w-4" />
             </button>
+          </div>
+        )}
+
+        {/* The asynchronous half of the upload. Rendered only once a quiz exists,
+            because before that there is nothing committed and nothing to report. */}
+        {currentQuiz && (
+          <div className="space-y-4 animate-fade-in">
+            <IndexingStatus backgroundProcessing={backgroundProcessing} />
+
+            <Card className="academic-card p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">
+                  {currentQuiz.questionCount} questions ready
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your material is saved. Indexing continues in the background and does not
+                  block taking the quiz.
+                </p>
+              </div>
+              <Button
+                onClick={continueToQuiz}
+                className="bg-accent text-primary-foreground hover:bg-accent/90 shrink-0"
+              >
+                Start Quiz
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </Card>
           </div>
         )}
 

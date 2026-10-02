@@ -1,0 +1,369 @@
+{
+  "name": "retrieval-gold-set-holdout-independent-v2",
+  "corpus": "athenaeum-corpus-v2-only",
+  "corpusVersion": "2.0.0",
+  "provenance": "SINGLE PROVENANCE. All 40 questions were authored from corpus-only material before any retrieval evaluation, by an authoring process that reports it was not given prior retrieval rankings, BM25 results, local-hash results, previous benchmark outcomes, retrieval tests, retrieval documentation, or any prior query set. 36 were authored in the original authoring pass; the four covering os-notes#1, os-notes#9, os-notes#12 and ds-notes#0 (q042, q043, q044, q045) were authored in a separate clean authoring pass given only corpus-v2-only.json, with no access to this file, to any other benchmark, or to any retrieval result. No retriever was run against any question before it was frozen. The four replacement questions are reproduced exactly as the clean author supplied them, with no edit of any kind: the question text, the relevance labels, the category and the adjudication string are all verbatim.",
+  "queries": [
+    {
+      "id": "q001",
+      "text": "What are the five states in the process life cycle model?",
+      "relevant": [
+        "os-notes#0"
+      ],
+      "category": "definition",
+      "adjudication": "Chunk os-notes#0 explicitly lists the five-state process model as New, Ready, Running, Waiting, and Terminated, explaining what triggers each transition. This directly answers the question. Other chunks discuss related concepts like scheduling and deadlock but do not list the five states."
+    },
+    {
+      "id": "q003",
+      "text": "What four conditions must all hold simultaneously for a deadlock to occur?",
+      "relevant": [
+        "os-notes#2"
+      ],
+      "category": "factual",
+      "adjudication": "Chunk os-notes#2 states the four necessary deadlock conditions: mutual exclusion, hold and wait, absence of preemption, and circular wait, with brief explanations of each. This is the authoritative answer. Distractor-notes#1 and #5 mention deadlock conditions but are index-style entries, not substantive explanations."
+    },
+    {
+      "id": "q004",
+      "text": "How does the banker's algorithm decide whether to grant a resource request?",
+      "relevant": [
+        "os-notes#3"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#3 explains that the banker's algorithm grants a request only when the resulting allocation state remains safe, simulating every possible completion order and proceeding only if at least one safe sequence exists. Finance-notes#0 mentions a banker's algorithm in cash management but this is a different context."
+    },
+    {
+      "id": "q005",
+      "text": "What are the differences between LRU, FIFO, optimal, and random page replacement algorithms?",
+      "relevant": [
+        "os-notes#4"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk os-notes#4 compares these four algorithms: LRU tracks temporal locality and performs well, FIFO is cheap but ignores future use, optimal has the lowest fault rate but is unimplementable, and random provides no locality. This directly answers the comparison question. No other chunk discusses these algorithms together."
+    },
+    {
+      "id": "q006",
+      "text": "What steps does the operating system take when handling a page fault?",
+      "relevant": [
+        "os-notes#5"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#5 lists the fixed sequence: MMU raises fault trap, OS validates reference, consults free frame list or replacement policy, schedules disk read, updates page table, and restarts the instruction. This is the complete mechanism. No other chunk describes this sequence."
+    },
+    {
+      "id": "q007",
+      "text": "How do FCFS, SSTF, and scan disk scheduling policies differ in their approach?",
+      "relevant": [
+        "os-notes#6"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk os-notes#6 compares the three: FCFS is fair but suffers long seek movement, SSTF reduces total movement but can starve distant requests, and scan services requests in both directions while sweeping. This answers the comparison directly. No other chunk discusses disk scheduling."
+    },
+    {
+      "id": "q008",
+      "text": "What trade-offs exist between contiguous allocation, fixed partitions, and paging?",
+      "relevant": [
+        "os-notes#7"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk os-notes#7 explains the trade-offs: contiguous allocation is simple but suffers external fragmentation, fixed partitions waste memory internally, and paging eliminates external fragmentation at the cost of internal fragmentation. This directly addresses the trade-off question. No other chunk compares these schemes."
+    },
+    {
+      "id": "q009",
+      "text": "Why does round robin scheduling prevent the convoy effect that occurs with first come first served?",
+      "relevant": [
+        "os-notes#8"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk os-notes#8 explains that round robin gives each process a fixed time slice and preempts when it expires, whereas FCFS is non-preemptive and a long process at the head delays every short process behind it (the convoy effect). This causal explanation is unique to this chunk."
+    },
+    {
+      "id": "q011",
+      "text": "How does virtual memory translate a virtual address to a physical address?",
+      "relevant": [
+        "os-notes#10"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#10 explains address translation: split virtual address into page number and offset, look up page number in page table to get frame number, concatenate frame number with offset to form physical address. This is the complete mechanism. Sysarch-notes#3 discusses virtual memory isolation but not the translation mechanism."
+    },
+    {
+      "id": "q012",
+      "text": "What does priority scheduling do when multiple processes share the highest priority?",
+      "relevant": [
+        "os-notes#11"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#11 states that when several processes share the top priority, the scheduler may use ageing, which periodically reduces a waiting process's effective priority so it cannot wait forever. This directly answers the question. Distractor-notes#0 mentions priority but is an index entry."
+    },
+    {
+      "id": "q014",
+      "text": "What do threads of the same process share and what does each thread keep separate?",
+      "relevant": [
+        "os-notes#13"
+      ],
+      "category": "factual",
+      "adjudication": "Chunk os-notes#13 states that threads share address space, open file table, and signal handlers, but each keeps its own program counter, register set, and stack. This directly answers the shared vs. separate question. No other chunk discusses thread sharing."
+    },
+    {
+      "id": "q015",
+      "text": "How does multilevel feedback queue scheduling prevent process starvation?",
+      "relevant": [
+        "os-notes#14"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#14 explains that a periodic priority boost returns long waiting processes to the top queue so that no process starves. This is the anti-starvation mechanism. The chunk also describes demotion and promotion rules unique to MLFQ."
+    },
+    {
+      "id": "q016",
+      "text": "What is Belady's anomaly and under what conditions does it occur?",
+      "relevant": [
+        "os-notes#15"
+      ],
+      "category": "definition",
+      "adjudication": "Chunk os-notes#15 defines Belady's anomaly as the observation that adding frames can increase page faults, occurring for policies that evict the page whose next use is furthest in the future (like optimal replacement). This is the complete definition and condition. No other chunk mentions this anomaly."
+    },
+    {
+      "id": "q017",
+      "text": "Why is indexing a file system tree expensive on cold storage?",
+      "relevant": [
+        "os-notes#16"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk os-notes#16 explains that each directory read is a separate random access, which is expensive on cold storage. It also mentions caching and sorting as optimizations. This causal explanation is unique to this chunk."
+    },
+    {
+      "id": "q018",
+      "text": "How do producers and consumers coordinate using a fixed-size buffer?",
+      "relevant": [
+        "os-notes#17"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#17 describes the coordination: producer appends and signals not empty, consumer removes and signals not full, each waits on appropriate condition variable when buffer is in wrong state. This is the complete mechanism. No other chunk discusses producer-consumer."
+    },
+    {
+      "id": "q019",
+      "text": "What steps does a library wrapper take when making a system call?",
+      "relevant": [
+        "os-notes#18"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk os-notes#18 lists the steps: place service number and arguments in registers, execute trap instruction to transfer to kernel, return result to caller. This is the mechanism. No other chunk describes the library wrapper's role."
+    },
+    {
+      "id": "q020",
+      "text": "How does a superscalar processor increase instruction throughput?",
+      "relevant": [
+        "sysarch-notes#0"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk sysarch-notes#0 explains that a superscalar issues several independent instructions per clock cycle from a single stream, and pipelines overlap fetch, decode, execute, memory, and writeback stages. This explains the throughput mechanism. No other chunk discusses superscalar processors."
+    },
+    {
+      "id": "q021",
+      "text": "Why do processors use branch predictors and what happens when a prediction is wrong?",
+      "relevant": [
+        "sysarch-notes#1"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk sysarch-notes#1 explains that branch predictors guess outcomes to keep the pipeline from flushing, and a misprediction costs the work done on the wrong path, with cost growing with speculation depth. This addresses both why and the consequence. No other chunk discusses branch prediction."
+    },
+    {
+      "id": "q022",
+      "text": "How does a write-ahead log enable crash recovery?",
+      "relevant": [
+        "sysarch-notes#2"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk sysarch-notes#2 explains that the log records every modifying operation before applying changes, and a crash is recovered by replaying the log and undoing uncommitted operations. This is the recovery mechanism. It also notes the log is the serialization point for atomicity. No other chunk discusses WAL."
+    },
+    {
+      "id": "q023",
+      "text": "How does virtual memory isolation prevent one process from accessing another's memory?",
+      "relevant": [
+        "sysarch-notes#3"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk sysarch-notes#3 explains that each process has its own address space and the MMU enforces the boundary on every load and store using page table permissions. A protection violation causes a page fault delivered as a fault signal. This is the isolation mechanism. Os-notes#10 discusses translation but not isolation enforcement."
+    },
+    {
+      "id": "q024",
+      "text": "What are the differences between direct mapped, set associative, and write-through versus write-back caches?",
+      "relevant": [
+        "sysarch-notes#4"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk sysarch-notes#4 compares these: direct mapped holds one line per set, set associative holds several and checks in parallel, write-through updates memory on every store, write-back updates only on eviction. This answers the comparison. No other chunk discusses cache organization."
+    },
+    {
+      "id": "q025",
+      "text": "Why are training, validation, and test sets separated in machine learning?",
+      "relevant": [
+        "ml-notes#0"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk ml-notes#0 explains that training is for parameter adjustment, validation is for hyperparameter selection, and test is held out from both and touched once at the end, because a model scored on the same data it was trained on does not generalize. This explains the separation rationale. No other chunk discusses these sets."
+    },
+    {
+      "id": "q026",
+      "text": "How do weight penalties and early stopping both serve as regularisation techniques?",
+      "relevant": [
+        "ml-notes#1"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk ml-notes#1 explains that both constrain the model: weight penalties shrink weights toward zero, early stopping halts training when validation error stops improving, both trading increased training error for reduced gap to unseen data. This comparison is specific to this chunk."
+    },
+    {
+      "id": "q027",
+      "text": "What happens if the learning rate is too large or too small in gradient descent?",
+      "relevant": [
+        "ml-notes#2"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk ml-notes#2 states that too large a step overshoots the minimum and loss diverges, too small makes convergence impractically slow. This directly answers the causal question. No other chunk discusses learning rate effects."
+    },
+    {
+      "id": "q028",
+      "text": "How are precision and recall derived from a confusion matrix?",
+      "relevant": [
+        "ml-notes#3"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk ml-notes#3 explains that the confusion matrix has true class on one axis and predicted on the other, the correct cell gives true positives, off-diagonal gives false positives and false negatives, and precision and recall are derived from these three counts. This is the derivation mechanism. No other chunk discusses confusion matrices."
+    },
+    {
+      "id": "q029",
+      "text": "How does a database buffer pool decide which page to evict when no free frame remains?",
+      "relevant": [
+        "db-notes#0"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk db-notes#0 explains that an eviction policy chooses a victim page when no frame is free, and the dirty page is written back before its frame is reused. This is the eviction mechanism. Os-notes#4 discusses page replacement in OS memory management, not database buffer pools."
+    },
+    {
+      "id": "q030",
+      "text": "What is the cash management heuristic described as a banker's algorithm in retail banking?",
+      "relevant": [
+        "finance-notes#0"
+      ],
+      "category": "definition",
+      "adjudication": "Chunk finance-notes#0 describes a cash management heuristic where the branch reviews pending withdrawals and remaining reserve, allocates a safe portion to each request, and defers the remainder when allocation would fall below minimum balance. This is the specific retail banking context. Os-notes#3 discusses the OS banker's algorithm for deadlock avoidance, which is a different algorithm."
+    },
+    {
+      "id": "q031",
+      "text": "What causes a process to move from the New state to the Ready state?",
+      "relevant": [
+        "os-notes#0"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk os-notes#0 states that a process moves to Ready when the scheduler dispatches it. This is the specific trigger for the New to Ready transition. No other chunk describes this transition."
+    },
+    {
+      "id": "q032",
+      "text": "Why can a fault in one thread not destroy the entire process?",
+      "relevant": [
+        "os-notes#13"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk os-notes#13 explains that each thread keeps its own program counter, register set, and stack, so a fault in one thread need not destroy the whole process. This explains the isolation benefit. No other chunk discusses thread fault isolation."
+    },
+    {
+      "id": "q035",
+      "text": "How does data dependency affect pipeline performance in a superscalar processor?",
+      "relevant": [
+        "sysarch-notes#0"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk sysarch-notes#0 states that a data dependency between two instructions stalls the pipeline regardless of how much execution width the processor has, which is why compilers reorder independent instructions. This explains the performance impact. No other chunk discusses data dependencies."
+    },
+    {
+      "id": "q036",
+      "text": "What components do branch predictors use to improve accuracy?",
+      "relevant": [
+        "sysarch-notes#1"
+      ],
+      "category": "factual",
+      "adjudication": "Chunk sysarch-notes#1 mentions that processors use a branch target buffer and a history-based predictor. These are the specific components mentioned. No other chunk discusses branch predictor components."
+    },
+    {
+      "id": "q037",
+      "text": "Why is the write-ahead log called the single serialization point for concurrent transactions?",
+      "relevant": [
+        "sysarch-notes#2"
+      ],
+      "category": "causal",
+      "adjudication": "Chunk sysarch-notes#2 states that the log is the single serialization point for concurrent transactions, which is what lets a database guarantee atomicity without locking the whole database. This explains why it enables serialization. No other chunk discusses this property."
+    },
+    {
+      "id": "q038",
+      "text": "How does the kernel respond to a page fault caused by a protection violation?",
+      "relevant": [
+        "sysarch-notes#3"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk sysarch-notes#3 explains that a page fault from a protection violation is delivered to the offending process as a fault signal, which the kernel may turn into a segmentation fault and terminate the process. This is the response mechanism. Os-notes#5 discusses page fault handling but not protection violations specifically."
+    },
+    {
+      "id": "q039",
+      "text": "What mechanisms does TCP use to keep the sender from overwhelming the receiver?",
+      "relevant": [
+        "net-notes#0"
+      ],
+      "category": "factual",
+      "adjudication": "Chunk net-notes#0 states that TCP uses a sliding congestion window to keep the sender from overwhelming the receiver. This is the specific mechanism mentioned for flow control. No other chunk discusses TCP congestion control."
+    },
+    {
+      "id": "q040",
+      "text": "How does recursive resolution work in the domain name system?",
+      "relevant": [
+        "net-notes#1"
+      ],
+      "category": "mechanism",
+      "adjudication": "Chunk net-notes#1 explains that recursive resolution walks the hierarchy from the root servers down to an authoritative name server before caching the answer with a time to live. This describes the resolution mechanism. No other chunk discusses DNS resolution."
+    },
+    {
+      "id": "q041",
+      "text": "What are the differences between breadth first search and depth first search in graph traversal?",
+      "relevant": [
+        "ds-notes#1"
+      ],
+      "category": "comparison",
+      "adjudication": "Chunk ds-notes#1 explains that breadth first search explores level by level using a queue, whereas depth first search follows a single branch as far as it can using a stack. This directly compares the two traversal approaches. No other chunk discusses graph search algorithms."
+    },
+    {
+      "id": "q042",
+      "text": "What information does the process control block store about a process?",
+      "relevant": [
+        "os-notes#1"
+      ],
+      "category": "process-management",
+      "adjudication": "Process control block stores process identifier, program counter, processor register state, scheduling priority, memory management page table pointer, accounting information, and list of open files and sockets."
+    },
+    {
+      "id": "q043",
+      "text": "How does a counting semaphore coordinate access to shared resources using wait and signal operations?",
+      "relevant": [
+        "os-notes#9"
+      ],
+      "category": "synchronization",
+      "adjudication": "A counting semaphore holds a counter of available resource units. Wait decrements the counter and blocks if zero, signal increments the counter and wakes a blocked process."
+    },
+    {
+      "id": "q044",
+      "text": "What is the difference between a trap and an interrupt in terms of what causes them?",
+      "relevant": [
+        "os-notes#12"
+      ],
+      "category": "exceptions",
+      "adjudication": "A trap is caused by the instruction that is executing (e.g., divide error, missing address translation, protection violation), unlike an interrupt."
+    },
+    {
+      "id": "q045",
+      "text": "How do hash tables resolve collisions when multiple keys map to the same bucket?",
+      "relevant": [
+        "ds-notes#0"
+      ],
+      "category": "data-structures",
+      "adjudication": "Collisions are resolved by chaining entries in a list or by probing an alternative open address."
+    }
+  ],
+  "provenanceNote": "This field records a process, not a verified fact. No automated test can establish who saw what before authoring, because the only artifact available for inspection is this file. The test suite verifies structure only: unique ids and texts, resolvable labels, no stored scores or ranks, full coverage of the answerable passages, and deterministic evaluation."
+}

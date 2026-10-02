@@ -13,6 +13,12 @@ const daysBetween = (a, b) => {
 
 const clamp = (value, min = 0, max = 100) => Math.min(Math.max(Math.round(value), min), max);
 
+// Keeps every read in an attempt-application inside the caller's transaction when
+// one is supplied, and behaves exactly as before when it is not.
+const withSession = (query, session) => (session ? query.session(session) : query);
+
+const saveDoc = (doc, session) => (session ? doc.save({ session }) : doc.save());
+
 const recommendedDifficultyFor = (mastery) => {
   if (mastery >= 78) return "Hard";
   if (mastery >= 55) return "Medium";
@@ -48,11 +54,11 @@ export const normalizeTopic = (topic) => {
   return canonicalNormalize(topic);
 };
 
-export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt }) => {
+export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt, session }) => {
   const progress = await UserProgress.findOneAndUpdate(
     { user: userId },
     { $setOnInsert: { user: userId } },
-    { upsert: true, new: true }
+    session ? { upsert: true, new: true, session } : { upsert: true, new: true }
   );
 
   progress.totals.quizzesTaken += 1;
@@ -123,23 +129,26 @@ export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt }) =
         description: "Completed your first assessment.",
         unlockedAt: now,
       });
-      await Notification.create({
-        user: userId,
-        title: "Achievement Unlocked! 🏆",
-        message: "You've earned the 'First Steps' achievement.",
-        type: "achievement"
-      });
+      await Notification.create(
+        [{
+          user: userId,
+          title: "Achievement Unlocked! 🏆",
+          message: "You've earned the 'First Steps' achievement.",
+          type: "achievement"
+        }],
+        session ? { session } : {}
+      );
     }
   }
 
-  await progress.save();
+  await saveDoc(progress, session);
 
-  await updateStudyStreak(userId);
+  await updateStudyStreak(userId, { session });
   return progress;
 };
 
-export const updateStudyStreak = async (userId) => {
-  const user = await User.findById(userId);
+export const updateStudyStreak = async (userId, { session } = {}) => {
+  const user = await withSession(User.findById(userId), session);
   if (!user) return null;
 
   const today = dateKey();
@@ -154,16 +163,19 @@ export const updateStudyStreak = async (userId) => {
     lastStudyDate: today,
   };
 
-  await user.save();
+  await saveDoc(user, session);
 
   // Streak Notifications
   if (current > 1 && [3, 7, 14, 30, 50, 100].includes(current)) {
-    await Notification.create({
-      user: userId,
-      title: `${current} Day Streak! 🔥`,
-      message: `You've studied for ${current} consecutive days. Keep it up!`,
-      type: "success"
-    });
+    await Notification.create(
+      [{
+        user: userId,
+        title: `${current} Day Streak! 🔥`,
+        message: `You've studied for ${current} consecutive days. Keep it up!`,
+        type: "success"
+      }],
+      session ? { session } : {}
+    );
   }
 
   return user.streak;

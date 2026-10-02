@@ -94,6 +94,50 @@ describe("GET /api/v1/health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("status");
   });
+
+  test("keeps its existing response shape while adding transaction capability", async () => {
+    const res = await request.get("/api/v1/health");
+
+    // The pre-existing contract must survive, because the Task 14 E2E health
+    // checks and the Compose healthcheck both depend on these fields.
+    expect(res.body).toHaveProperty("services.mongoDB");
+    expect(res.body).toHaveProperty("services.redis");
+    expect(res.body).toHaveProperty("database.label");
+    expect(["ok", "degraded"]).toContain(res.body.status);
+    // Connected and capable are different claims and are now reported apart.
+    expect(["supported", "unsupported", "unknown"]).toContain(
+      res.body.database.transactions,
+    );
+  });
+
+  test("does not report ok when the deployment cannot run transactions", async () => {
+    const res = await request.get("/api/v1/health");
+
+    if (res.body.database.transactions === "unsupported") {
+      // Connected but incapable must not read as healthy while quiz generation
+      // and attempt sync are impossible.
+      expect(res.body.status).toBe("degraded");
+    } else {
+      expect(["ok", "degraded"]).toContain(res.body.status);
+    }
+  });
+
+  test("readiness reflects connection, and still discloses the capability", async () => {
+    const res = await request.get("/api/v1/health/ready");
+
+    expect([200, 503]).toContain(res.status);
+    expect(["ready", "not_ready"]).toContain(res.body.status);
+    expect(["supported", "unsupported", "unknown"]).toContain(
+      res.body.database.transactions,
+    );
+
+    if (mongoose.connection.readyState === 1) {
+      // Readiness means "can serve traffic", and it must not become 503 merely
+      // because transactions are unavailable: every non-transactional path
+      // still works, and the worker depends on this endpoint.
+      expect(res.status).toBe(200);
+    }
+  });
 });
 
 // ─── 2. Auth — Signup ────────────────────────────────────────────────────────

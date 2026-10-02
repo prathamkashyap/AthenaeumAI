@@ -163,11 +163,14 @@ test.describe('UI Workflows & Mocking', () => {
     // Should navigate away from auth
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 10000 });
 
-    await expect(page.locator('text=Welcome back,').first()).toBeVisible();
+    // The dashboard greeting is time-of-day based ("Good morning" / "Good evening" / …),
+    // so assert the heading rendered with the learner's name instead of pinning one
+    // greeting string — otherwise this test fails depending on when it runs.
+    await expect(page.locator('h1')).toContainText('E2E');
     await expect(page.locator('text=E2E').first()).toBeVisible();
   });
 
-  test('Socratic Tutor chat flow with authenticated user', async ({ page }) => {
+  test('Authenticated user without material sees the tutor empty state', async ({ page }) => {
     await page.goto('/auth');
     await page.getByRole('tab', { name: 'Signup' }).click();
     await page.fill('#name', 'Tutor Flow');
@@ -176,11 +179,15 @@ test.describe('UI Workflows & Mocking', () => {
     await page.click('button:has-text("Create Workspace")');
     await page.waitForURL((url) => !url.pathname.includes('/auth'));
 
+    // A brand-new learner has an empty library. The tutor answers only from
+    // indexed material, so with nothing uploaded it must offer the upload path
+    // rather than a question box it could not ground an answer in. The chat
+    // flow against real material is covered by the component suites and by the
+    // post-deployment smoke test, where a material actually exists.
     await page.goto('/tutor');
 
-    await page.fill('textarea[placeholder*="Ask"]', 'What are deadlocks?');
-    await page.click('button:has-text("Ask Tutor")');
-
-    await expect(page.locator('text=Socratic Tutor: Consider how physical resources')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Add material before asking' })).toBeVisible();
+    await expect(page.locator('textarea[placeholder*="Ask"]')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /Add Material/ })).toBeVisible();
   });
 });

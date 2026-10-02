@@ -1,5 +1,6 @@
 import { generateQuizFromAI } from "./aiQuizService.js";
 import logger from "../utils/logger.js";
+import { AIServiceError } from "../utils/errors.js";
 import { chunkText } from "../utils/chunker.js";
 import { isLowQuality } from "../utils/qualityFilter.js";
 import { normalizeTopic } from "./topicNormalizationService.js";
@@ -8,11 +9,13 @@ import { normalizeTopic } from "./topicNormalizationService.js";
  * Main quiz generation orchestrator.
  */
 export const generateQuiz = async (text, difficulty = "Easy", count = 5) => {
-  try {
-    if (!text || text.length < 500) {
-      throw new Error("PDF content too small for quiz generation");
-    }
+  // An input problem, not a provider failure, so it is checked before the
+  // pipeline: inside the try it would be indistinguishable from the AI failing.
+  if (!text || text.length < 500) {
+    throw new Error("PDF content too small for quiz generation");
+  }
 
+  try {
     // STEP 1: Clean basic noise
     const cleanedText = text.replace(/\s+/g, " ").trim();
 
@@ -69,8 +72,15 @@ export const generateQuiz = async (text, difficulty = "Easy", count = 5) => {
     throw new Error("AI returned empty result");
 
   } catch (err) {
-    logger.warn("⚠️ AI failed, using fallback generator:", { error: err.message });
-    return fallbackQuizGenerator(text, count);
+    // A provider that cannot answer is reported as a failure. Substituting
+    // synthetic questions here would persist them as an ordinary quiz with no
+    // marker that the model was never consulted — every fabricated question is
+    // answered "True", because that is what the generator produced — which
+    // contradicts the documented requirement that AI configuration is required
+    // for generation. `AIServiceError` is the repository's existing provider
+    // failure convention (502).
+    logger.warn("⚠️ Quiz generation failed:", { error: err.message });
+    throw new AIServiceError("Failed to generate questions. Please try again.", err);
   }
 };
 
@@ -126,41 +136,4 @@ const scoreQuestion = (q) => {
   if (q.question.toLowerCase().includes("what is")) score -= 2;
 
   return score;
-};
-
-
-
-
-/**
- * Fallback quiz generator
- */
-const fallbackQuizGenerator = (text, count = 5) => {
-  if (!text || typeof text !== "string") {
-    throw new Error("Invalid text input for quiz generation");
-  }
-
-  const cleaned = text.replace(/\s+/g, " ").trim();
-
-  if (cleaned.length < 50) {
-    throw new Error("Text too short to generate quiz");
-  }
-
-  const sentences = cleaned
-    .split(/[.?!]/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 40 && s.split(" ").length > 6);
-
-  if (sentences.length < 2) {
-    throw new Error("Not enough meaningful content");
-  }
-
-  const selected = sentences.slice(0, Math.min(count, sentences.length));
-
-  return selected.map((sentence) => ({
-    question: sentence,
-    options: ["True", "False", "Depends", "None"],
-    answer: 0,
-    explanation: "Generated from source text",
-    topic: normalizeTopic(""),
-  }));
 };

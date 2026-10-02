@@ -5,13 +5,39 @@ import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiFetch } from "@/lib/api";
-import { Bot, Brain, FileText, Loader2, Send, Sparkles } from "lucide-react";
+import { Bot, Brain, FileCheck2, FileText, HelpCircle, Info, Loader2, Send, Sparkles, AlertTriangle, BookOpen, Plus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 interface Material {
   _id: string;
   title: string;
   originalFileName: string;
+}
+
+interface RetrievedSource {
+  sourceNumber: number;
+  sourceTitle: string;
+  chunkIndex: number;
+  score: number;
+  preview: string;
+  topics: string[];
+}
+
+/**
+ * The backend's grounding decision, as of the explicit contract.
+ *
+ * Optional because a response predating the contract carries no such field, and
+ * because treating a missing field as `grounded: false` would label every older
+ * response a refusal. The absence is handled explicitly below rather than
+ * defaulted into one of the two known states.
+ */
+interface GroundingDecision {
+  grounded: boolean;
+  reason: string | null;
+  evidenceCount: number;
+  consideredCount: number;
+  bestScore: number;
 }
 
 interface TutorResponse {
@@ -21,15 +47,49 @@ interface TutorResponse {
   personalizedNotes: string[];
   revisionPlan: string[];
   suggestedFollowUps: string[];
-  retrievedContext: {
-    sourceNumber: number;
-    sourceTitle: string;
-    chunkIndex: number;
-    score: number;
-    preview: string;
-    topics: string[];
-  }[];
+  retrievedContext: RetrievedSource[];
+  grounding?: GroundingDecision;
 }
+
+/**
+ * The three states the UI distinguishes.
+ *
+ * `unreported` exists because the field is additive: a response from before the
+ * grounding contract, or from a deployment that has not shipped it, has no
+ * decision at all. That is not the same as a refusal, and rendering it as one
+ * would tell a learner the tutor declined to answer something it did answer.
+ */
+type TutorViewState = "grounded" | "insufficient" | "unreported";
+
+const resolveViewState = (response: TutorResponse | null): TutorViewState => {
+  const grounded = response?.grounding?.grounded;
+
+  // Three cases, and the middle one is deliberately narrow. `grounded` is a
+  // boolean at a runtime boundary, so a value that is not literally `true` or
+  // `false` is not a decision this client is entitled to interpret: it may be a
+  // partial payload, a renamed field, or an intermediary serialisation.
+  //
+  // Treating an unreadable decision as `grounded` would put a "Based on your
+  // uploaded material" badge on a response that never reported one, which is a
+  // claim the payload does not support. Treating it as `insufficient` would
+  // accuse the tutor of declining to answer something it did answer. Neither
+  // inference is available to the client, so the answer is neither: the state is
+  // unreported, and the UI makes no grounding claim at all.
+  if (grounded === true) return "grounded";
+  if (grounded === false) return "insufficient";
+  return "unreported";
+};
+
+/**
+ * Sources shown for a grounded answer.
+ *
+ * Empty for a refusal even though `retrievedContext` is populated, because the
+ * backend returns the chunks it considered alongside a refusal for diagnostic
+ * purposes. Presenting them as sources for an answer that was never given would
+ * be the one thing this UI must never do.
+ */
+const citableSources = (response: TutorResponse | null, state: TutorViewState) =>
+  state === "insufficient" ? [] : response?.retrievedContext ?? [];
 
 const Tutor = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -38,18 +98,45 @@ const Tutor = () => {
   const [isAsking, setIsAsking] = useState(false);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState("");
+  // The tutor's grounding depends entirely on indexed material, so whether any
+  // exists has to be a known fact rather than an inference. A failed lookup is
+  // tracked apart from an empty library, because claiming "you have no
+  // materials" when the request simply failed is the one message that would
+  // send the learner off to re-upload what they already have.
+  const [materialsFailed, setMaterialsFailed] = useState(false);
+  const [materialsLoading, setMaterialsLoading] = useState(true);
 
   useEffect(() => {
+    setMaterialsLoading(true);
     apiFetch("/library")
       .then((res) => res.ok ? res.json() : Promise.reject())
-      .then((data) => setMaterials(data.materials || []))
-      .catch(() => setMaterials([]));
+      .then((data) => {
+        setMaterials(data.materials || []);
+        setMaterialsFailed(false);
+      })
+      .catch(() => setMaterialsFailed(true))
+      .finally(() => setMaterialsLoading(false));
   }, []);
 
   const selectedMaterialTitle = useMemo(() => {
     if (materialId === "all") return "All indexed materials";
     return materials.find((material) => material._id === materialId)?.title || "Selected material";
   }, [materialId, materials]);
+
+  // The backend decision is the single source of truth for how the response is
+  // presented. Nothing below infers grounding from the answer's wording, its
+  // length, or how many sources came back: a model that answers confidently from
+  // three irrelevant chunks looks identical to one that answers from the right
+  // one, and only the server knows which happened.
+  const viewState = resolveViewState(response);
+  const isRefusal = viewState === "insufficient";
+  const sources = citableSources(response, viewState);
+  const sourcesWithReasons = useMemo(() => {
+    const reasons = new Map(
+      (response?.groundedSources ?? []).map((source) => [source.sourceNumber, source.whyRelevant]),
+    );
+    return sources.map((source) => ({ ...source, whyRelevant: reasons.get(source.sourceNumber) }));
+  }, [sources, response?.groundedSources]);
 
   const askTutor = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -90,23 +177,92 @@ const Tutor = () => {
             </p>
           </div>
 
-          <div className="w-full lg:w-72">
-            <Select value={materialId} onValueChange={setMaterialId}>
-              <SelectTrigger className="bg-muted/40">
-                <SelectValue placeholder="Choose material" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All indexed materials</SelectItem>
-                {materials.map((material) => (
-                  <SelectItem key={material._id} value={material._id}>
-                    {material.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/*
+            A selector offering only "All indexed materials" implies a library
+            behind it. With nothing indexed, or with the lookup failed, it would
+            be asserting something this page does not know.
+          */}
+          {materials.length > 0 && (
+            <div className="w-full lg:w-72">
+              <Select value={materialId} onValueChange={setMaterialId}>
+                <SelectTrigger className="bg-muted/40">
+                  <SelectValue placeholder="Choose material" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All indexed materials</SelectItem>
+                  {materials.map((material) => (
+                    <SelectItem key={material._id} value={material._id}>
+                      {material.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
+        {/*
+          The tutor answers from the learner's own material, so a question asked
+          with nothing indexed can only ever reach the grounding refusal. Saying
+          so up front, with the step that fixes it, is more useful than letting
+          the learner discover it by being refused.
+        */}
+        {/*
+          Shown while the library lookup is still in flight. Previously the
+          question box was rendered during loading, which let a fast learner
+          submit before `/library` resolved — so the tutor could accept a
+          question while still unable to say whether it had anything to ground
+          it in.
+        */}
+        {materialsLoading && (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-accent" />
+          </div>
+        )}
+
+        {!materialsLoading && materialsFailed && (
+          <Card className="academic-card p-10 text-center">
+            <div className="mx-auto h-14 w-14 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+              <AlertTriangle className="h-7 w-7 text-amber-400" />
+            </div>
+            <h2 className="font-serif text-2xl">Couldn&apos;t check your library</h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+              The tutor needs to know what you have indexed before it can answer from it, and
+              that lookup did not complete. Nothing is missing from your library — try again in a
+              moment.
+            </p>
+          </Card>
+        )}
+
+        {!materialsLoading && !materialsFailed && materials.length === 0 && (
+          <Card className="academic-card p-10 text-center">
+            <div className="mx-auto h-14 w-14 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4">
+              <BookOpen className="h-7 w-7 text-accent" />
+            </div>
+            <h2 className="font-serif text-2xl">Add material before asking</h2>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
+              The tutor answers from your indexed study materials, so it has nothing to work from
+              yet. Upload a PDF and it will ground its answers in that material.
+            </p>
+            <Button
+              asChild
+              className="mt-5 bg-accent text-primary-foreground hover:bg-accent/90"
+            >
+              <Link to="/assessments/create">
+                <Plus className="mr-2 h-4 w-4" /> Add Material
+              </Link>
+            </Button>
+          </Card>
+        )}
+
+        {/*
+          The question box appears only once the library is known to hold
+          something. Not while loading, and not on a failed lookup: in both of
+          those the page cannot yet say whether the tutor has anything to answer
+          from, and offering the interaction anyway invites either a premature
+          question or a refusal with no explanation.
+        */}
+        {!materialsLoading && !materialsFailed && materials.length > 0 ? (
         <div className="grid lg:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
             <Card className="academic-card p-5">
@@ -143,7 +299,45 @@ const Tutor = () => {
                     <Bot className="h-5 w-5 text-accent" />
                   </div>
                   <div className="flex-1 space-y-3">
-                    <Badge variant="outline" className="border-accent/40 text-accent">Grounded response</Badge>
+                    {/* Grounding state is announced, not merely coloured: the icon and
+                        the text both carry it, so it survives a screen reader and a
+                        greyscale display. The wording claims only what the backend
+                        established — that evidence was present — not that the answer
+                        is correct, complete, or semantically understood. */}
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex items-center gap-2 flex-wrap"
+                    >
+                      {/* A third rendering, not a fallback: the backend reported no
+                          decision this client can read, so the page asserts no
+                          grounding at all rather than guessing one. The answer and
+                          its citations still render — only the claim is withheld. */}
+                      {isRefusal ? (
+                        <Badge variant="outline" className="border-amber-500/50 text-amber-600 dark:text-amber-400 gap-1.5">
+                          <Info className="h-3 w-3" aria-hidden="true" />
+                          No supporting material found
+                        </Badge>
+                      ) : viewState === "unreported" ? (
+                        <Badge variant="outline" className="border-border text-muted-foreground gap-1.5">
+                          <HelpCircle className="h-3 w-3" aria-hidden="true" />
+                          Grounding not reported
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-accent/40 text-accent gap-1.5">
+                          <FileCheck2 className="h-3 w-3" aria-hidden="true" />
+                          Based on your uploaded material
+                        </Badge>
+                      )}
+                    </div>
+
+                    {isRefusal && (
+                      <p className="text-sm text-muted-foreground">
+                        Your uploaded material did not provide evidence for this question, so the tutor
+                        did not attempt an answer.
+                      </p>
+                    )}
+
                     <p className="text-base leading-relaxed text-foreground whitespace-pre-wrap">{response.answer}</p>
                   </div>
                 </div>
@@ -185,21 +379,54 @@ const Tutor = () => {
 
           <aside className="space-y-4">
             <Card className="academic-card p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-4">Retrieved Sources</p>
-              {response?.retrievedContext?.length ? (
-                <div className="space-y-3">
-                  {response.retrievedContext.map((source) => (
-                    <div key={`${source.sourceTitle}-${source.chunkIndex}`} className="rounded-lg border border-border bg-card/30 p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <p className="text-sm font-medium truncate">{source.sourceTitle}</p>
-                        <Badge variant="outline" className="text-[10px] border-border font-mono">
-                          {Math.round(source.score * 100)}%
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-4">
+                {isRefusal ? "No Sources" : "Sources Used"}
+              </p>
+
+              {isRefusal ? (
+                // No source list at all on a refusal. The backend returns the chunks
+                // it weighed so the refusal is auditable server-side, but they are
+                // not sources for an answer, and listing them under any heading
+                // invites the reader to treat them as one.
+                <p className="text-sm text-muted-foreground">
+                  No sources are shown because the tutor did not answer from your material.
+                </p>
+              ) : sources.length > 0 ? (
+                <ol className="space-y-3" aria-label="Sources used for this answer">
+                  {sourcesWithReasons.map((source) => (
+                    <li
+                      key={`${source.sourceNumber}-${source.sourceTitle}-${source.chunkIndex}`}
+                      className="rounded-lg border border-border bg-card/30 p-3"
+                    >
+                      <div className="flex items-start gap-2 mb-2">
+                        {/* The source number is the citation handle the answer can be
+                            checked against, so it is given an accessible name rather
+                            than being read as a bare digit. */}
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] border-border font-mono shrink-0"
+                          aria-label={`Source ${source.sourceNumber}`}
+                        >
+                          [{source.sourceNumber}]
                         </Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{source.sourceTitle}</p>
+                          {/* The chunk index is what the API actually supplies. There is
+                              no page number, offset or location in the response, and
+                              inventing one would send a learner looking for something
+                              that does not exist. */}
+                          <p className="text-[11px] text-muted-foreground font-mono">
+                            Section {source.chunkIndex + 1}
+                          </p>
+                        </div>
                       </div>
+                      {source.whyRelevant && (
+                        <p className="text-xs text-muted-foreground mb-2">{source.whyRelevant}</p>
+                      )}
                       <p className="text-xs text-muted-foreground line-clamp-4">{source.preview}</p>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               ) : (
                 <p className="text-sm text-muted-foreground">Sources will appear after a tutor response.</p>
               )}
@@ -225,6 +452,7 @@ const Tutor = () => {
             </Card>
           </aside>
         </div>
+        ) : null}
       </div>
     </AppLayout>
   );

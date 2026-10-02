@@ -1,20 +1,12 @@
-import Groq from "groq-sdk";
 import logger from "../utils/logger.js";
+import { getAIProvider } from "./aiProvider.js";
 
 // =========================
-// Groq Client (Lazy Init)
+// AI Provider
 // =========================
-let groq = null;
-
-const getGroqClient = () => {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is not set");
-  }
-  if (!groq) {
-    groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  }
-  return groq;
-};
+// The provider is resolved per call so that a test can inject a deterministic
+// implementation, and so no Groq client is constructed until one is really needed.
+const complete = (request) => getAIProvider().complete(request);
 
 // =========================
 // Difficulty Profiles
@@ -302,7 +294,7 @@ export const generateQuizFromAI = async (
 
     for (const chunk of selectedChunks) {
       try {
-        const response = await getGroqClient().chat.completions.create({
+        const { content: raw } = await complete({
           model: "llama-3.3-70b-versatile",
           messages: [
             {
@@ -315,10 +307,9 @@ export const generateQuizFromAI = async (
             },
           ],
           temperature: difficulty === "Hard" ? 0.2 : profile.temp,
-          max_tokens: 2048,
+          maxTokens: 2048,
         });
 
-        const raw = response.choices[0]?.message?.content;
         const parsed = parseAIResponse(raw);
 
         if (parsed) {
@@ -358,7 +349,7 @@ export const generateQuizFromAI = async (
 export const generateFlashcardsFromAI = async (text, count = 12) => {
   if (!text || text.trim().length < 80) return [];
 
-  const response = await getGroqClient().chat.completions.create({
+  const { content } = await complete({
     model: "llama-3.3-70b-versatile",
     messages: [
       {
@@ -394,10 +385,10 @@ ${text.slice(0, 9000)}
       },
     ],
     temperature: 0.25,
-    max_tokens: 2048,
+    maxTokens: 2048,
   });
 
-  const raw = response.choices[0]?.message?.content || "";
+  const raw = content || "";
   const parsed = parseAIResponse(raw);
   if (!parsed) return [];
 
@@ -414,7 +405,7 @@ ${text.slice(0, 9000)}
 export const generateMistakeAnalysesFromAI = async ({ quizTitle, difficulty, mistakes }) => {
   if (!mistakes?.length) return [];
 
-  const response = await getGroqClient().chat.completions.create({
+  const { content } = await complete({
     model: "llama-3.3-70b-versatile",
     messages: [
       {
@@ -457,10 +448,10 @@ ${JSON.stringify(mistakes, null, 2)}
       },
     ],
     temperature: 0.2,
-    max_tokens: 2048,
+    maxTokens: 2048,
   });
 
-  const raw = response.choices[0]?.message?.content || "";
+  const raw = content || "";
   const parsed = parseAIResponse(raw);
   if (!parsed) return [];
 
@@ -494,7 +485,7 @@ Similarity: ${context.score}
 Text: ${context.chunkText}`
   )).join("\n\n");
 
-  const response = await getGroqClient().chat.completions.create({
+  const { content } = await complete({
     model: "llama-3.3-70b-versatile",
     messages: [
       {
@@ -544,10 +535,10 @@ ${JSON.stringify(flashcards, null, 2)}
       },
     ],
     temperature: 0.2,
-    max_tokens: 2500,
+    maxTokens: 2500,
   });
 
-  const raw = response.choices[0]?.message?.content || "";
+  const raw = content || "";
   const parsed = parseAIObjectResponse(raw);
   if (!parsed?.answer) {
     throw new Error("Tutor AI returned invalid response");

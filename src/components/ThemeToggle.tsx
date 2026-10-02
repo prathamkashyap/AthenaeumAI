@@ -14,7 +14,7 @@ const apply = (t: Theme) => {
 };
 
 const labelFor = (t: Theme) =>
-  t === "starry" ? "Starry" : t === "light" ? "Light" : "Academia";
+  t === "starry" ? "Aurora" : t === "light" ? "Light" : "Academia";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("starry");
