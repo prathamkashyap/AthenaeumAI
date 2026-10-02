@@ -1,7 +1,7 @@
 export const API_ROOT =
   import.meta.env.VITE_API_ROOT ||
   import.meta.env.VITE_API_URL ||
-  "http://localhost:3001/api/v1";
+  "http://localhost:5001/api/v1";
 
 export const authHeaders = () => {
   const token = localStorage.getItem("athenaeum_token");

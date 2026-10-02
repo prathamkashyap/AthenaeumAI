@@ -1,10 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* AthenaeumAI — Black Starry Minimal + Neon Subtle Accents (default)
+/* AthenaeumAI — Aurora Minimal + Subtle Accents (default)
    Optional: .theme-academia class on <html> swaps to dark academia gold.
    All colors HSL.
 */
@@ -48,7 +48,7 @@
     --accent-purple: 265 80% 70%;
     --ink: 220 35% 2%;
 
-    --gradient-hero: linear-gradient(135deg, hsl(220 35% 4%) 0%, hsl(220 30% 7%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(220 38% 5%) 0%, hsl(215 45% 9%) 45%, hsl(230 40% 6%) 100%);
     --gradient-card: linear-gradient(160deg, hsl(220 28% 6%) 0%, hsl(220 30% 3%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(210 90% 65%) 0%, hsl(220 80% 55%) 100%);
     --gradient-gold: var(--gradient-accent); /* legacy alias so .gold-text still works */
@@ -164,8 +164,8 @@
     font-feature-settings: "ss01", "cv11";
   }
   h1, h2, h3, h4, .font-serif {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    letter-spacing: -0.01em;
+    font-family: 'Inter', system-ui, sans-serif;
+    letter-spacing: -0.02em;
   }
   body, p, span, button, input, textarea {
     font-family: 'Inter', system-ui, sans-serif;
@@ -183,6 +183,34 @@
     @apply border-accent/40;
     box-shadow: var(--shadow-elegant), var(--shadow-glow);
   }
+
+  /* Floating glass panel — used for the auth card and similar "elevated"
+     surfaces. background-image (not background-color) so it always paints
+     above whatever the base Card component sets, and a masked gradient
+     ::before gives the 1px rim-light border without extra markup. */
+  .glass-panel {
+    position: relative;
+    border-radius: 1.25rem;
+    background-image: linear-gradient(180deg, hsl(var(--card) / 0.55) 0%, hsl(var(--card) / 0.3) 100%);
+    backdrop-filter: blur(28px) saturate(140%);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    box-shadow:
+      0 30px 80px -28px hsl(0 0% 0% / 0.65),
+      0 1px 0 0 hsl(0 0% 100% / 0.08) inset;
+  }
+  .glass-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(160deg, hsl(var(--accent) / 0.4), hsl(0 0% 100% / 0.06) 35%, transparent 55%, hsl(265 80% 70% / 0.25));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
   .gold-text {
     background: var(--gradient-gold);
     -webkit-background-clip: text;
@@ -202,106 +230,59 @@
 }
 
 @layer utilities {
-  /* ======= Starry Background ======= */
+  /* ======= Aurora Background ======= */
 
-  /* Outer wrapper handles slow drift + pointer parallax */
-  .star-drift {
+  /* Each blob animates on its own drift keyframe while a shared pair of
+     --parallax-x/--parallax-y vars (updated from JS on pointermove) get
+     folded into the same transform — same trick the old starfield used,
+     kept because it lets CSS re-read the vars every frame without
+     restarting the animation. */
+  .aurora-blob {
     position: absolute;
-    border-radius: 9999px;
     will-change: transform;
-    transform: translate3d(var(--parallax-x, 0), var(--parallax-y, 0), 0);
-    animation: star-drift var(--drift-dur, 40s) ease-in-out infinite alternate;
+    transform: translate3d(var(--parallax-x, 0px), var(--parallax-y, 0px), 0) scale(1);
+    animation: aurora-drift var(--aurora-dur, 32s) ease-in-out infinite alternate;
   }
-  .star-twinkle {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: inherit;
-    box-shadow: inherit;
-    will-change: opacity;
-    animation: star-twinkle ease-in-out infinite;
+  @keyframes aurora-drift {
+    0%   { transform: translate3d(var(--parallax-x, 0px), var(--parallax-y, 0px), 0) scale(1); }
+    100% { transform: translate3d(calc(var(--parallax-x, 0px) + var(--drift-x, 40px)),
+                                  calc(var(--parallax-y, 0px) + var(--drift-y, 30px)), 0)
+                       scale(var(--drift-scale, 1.1)); }
   }
 
-  @keyframes star-drift {
-    0%   { transform: translate3d(var(--parallax-x, 0), var(--parallax-y, 0), 0); }
-    100% { transform: translate3d(calc(var(--parallax-x, 0px) + var(--drift-x, 0px)),
-                                  calc(var(--parallax-y, 0px) + var(--drift-y, 0px)), 0); }
-  }
-  @keyframes star-twinkle {
-    0%, 100% { opacity: 0.18; }
-    50%      { opacity: 1;    }
-  }
-
-  /* Slow nebula drift */
-  @keyframes nebula-drift-a {
-    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    50%      { transform: translate3d(40px, 20px, 0) scale(1.08); }
-  }
-  @keyframes nebula-drift-b {
-    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    50%      { transform: translate3d(-30px, -25px, 0) scale(1.05); }
-  }
-  @keyframes nebula-drift-c {
-    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    50%      { transform: translate3d(25px, -35px, 0) scale(1.1); }
-  }
-  .animate-nebula-drift-a { animation: nebula-drift-a 22s ease-in-out infinite; }
-  .animate-nebula-drift-b { animation: nebula-drift-b 28s ease-in-out infinite; }
-  .animate-nebula-drift-c { animation: nebula-drift-c 34s ease-in-out infinite; }
-
-  /* Comets — directional via CSS vars */
-  .comet {
-    position: absolute;
-    height: 1.5px;
-    border-radius: 9999px;
-    background: linear-gradient(90deg, transparent 0%, hsl(0 0% 100% / 0.9) 45%, hsl(210 100% 75% / 0.95) 80%, hsl(210 95% 60% / 0) 100%);
-    box-shadow: 0 0 10px hsl(210 95% 80% / 0.65), 0 0 24px hsl(210 90% 70% / 0.35);
-    transform-origin: left center;
-    opacity: 0;
-    animation: comet-fly linear forwards;
-    will-change: transform, opacity;
-  }
-  .comet.comet-cyan {
-    background: linear-gradient(90deg, transparent 0%, hsl(0 0% 100% / 0.9) 40%, hsl(195 95% 70% / 0.95) 80%, hsl(195 95% 60% / 0) 100%);
-    box-shadow: 0 0 10px hsl(195 95% 75% / 0.7), 0 0 26px hsl(195 95% 60% / 0.4);
-  }
-  .comet::after {
-    content: "";
-    position: absolute;
-    right: -3px;
-    top: -2px;
-    width: 6px;
-    height: 6px;
-    border-radius: 9999px;
-    background: hsl(0 0% 100%);
-    box-shadow: 0 0 12px hsl(210 100% 90% / 0.95), 0 0 28px hsl(210 95% 70% / 0.7);
-  }
-
-  @keyframes comet-fly {
-    0%   { opacity: 0;   transform: rotate(var(--comet-angle, 0deg)) translate3d(0, 0, 0); }
-    12%  { opacity: 1; }
-    85%  { opacity: 0.9; }
-    100% { opacity: 0;   transform: rotate(var(--comet-angle, 0deg))
-             translate3d(var(--comet-end-x, 100vw), var(--comet-end-y, 0), 0); }
-  }
-
+  /* ======= Click residue (small — not the old giant ripple) ======= */
   .ripple {
     position: fixed;
-    width: 10px;
-    height: 10px;
-    margin-left: -5px;
-    margin-top: -5px;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    margin-top: -4px;
     border-radius: 9999px;
     pointer-events: none;
-    background: radial-gradient(circle, hsl(210 100% 90% / 0.9) 0%, hsl(215 95% 70% / 0.5) 40%, transparent 70%);
-    box-shadow: 0 0 12px hsl(210 100% 85% / 0.7);
-    animation: ripple-burst 0.75s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    border: 1px solid hsl(210 100% 82% / 0.55);
+    background: radial-gradient(circle, hsl(210 100% 92% / 0.5) 0%, transparent 70%);
+    box-shadow: 0 0 6px hsl(210 100% 80% / 0.35);
+    animation: ripple-burst 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
     z-index: 60;
   }
+  .ripple::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+    background: hsl(0 0% 100% / 0.9);
+    animation: ripple-dot 0.3s ease-out forwards;
+  }
   @keyframes ripple-burst {
-    0%   { opacity: 0.9; transform: scale(0.4); }
-    60%  { opacity: 0.5; }
-    100% { opacity: 0;   transform: scale(14); }
+    0%   { opacity: 0.7; transform: scale(0.6); }
+    100% { opacity: 0;   transform: scale(3.2); }
+  }
+  @keyframes ripple-dot {
+    0%   { opacity: 0.9; transform: scale(1); }
+    100% { opacity: 0;   transform: scale(0.4); }
   }
 
   /* Subtle shimmer sweep for hover trails */
@@ -322,7 +303,7 @@
   .shimmer-hover:hover::before { transform: translateX(100%); }
 
   @media (prefers-reduced-motion: reduce) {
-    .star, .comet, .ripple { animation: none !important; }
+    .aurora-blob, .ripple { animation: none !important; }
   }
 
   .flip-card { perspective: 1200px; }

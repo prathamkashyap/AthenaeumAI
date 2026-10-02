@@ -23,6 +23,37 @@ import { useAuth } from "@/context/AuthContext";
 
 const API_BASE = "/quiz";
 
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Burning the midnight oil";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 21) return "Good evening";
+  return "Working late";
+};
+
+function useCountUp(target: number, durationMs = 900) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let raf: number;
+    const start = performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min((now - start) / durationMs, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(target * eased));
+      if (progress < 1) raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
+  }, [target, durationMs]);
+  return value;
+}
+
+function AnimatedStat({ value, suffix = "" }: { value: number; suffix?: string }) {
+  const animated = useCountUp(value);
+  return <>{animated}{suffix}</>;
+}
+
 interface SubjectInfo {
   subject: string;
   shortName: string;
@@ -166,25 +197,29 @@ const Index = () => {
   const stats = [
     {
       label: "Quizzes Taken",
-      value: String(analytics?.totals?.quizzesTaken ?? 0),
+      rawValue: analytics?.totals?.quizzesTaken ?? 0,
+      suffix: "",
       delta: `${analytics?.totals?.questionsAnswered ?? 0} questions answered`,
       icon: BookMarked,
     },
     {
       label: "Readiness",
-      value: `${analytics?.totals?.estimatedReadiness ?? 0}%`,
+      rawValue: analytics?.totals?.estimatedReadiness ?? 0,
+      suffix: "%",
       delta: `${analytics?.totals?.averageMastery ?? 0}% mastery`,
       icon: Target,
     },
     {
       label: "Retention",
-      value: `${analytics?.totals?.retentionScore ?? 0}%`,
+      rawValue: analytics?.totals?.retentionScore ?? 0,
+      suffix: "%",
       delta: `${analytics?.totals?.averageConfidence ?? 0}% confidence`,
       icon: Flame,
     },
     {
       label: "Due Reviews",
-      value: String(analytics?.totals?.reviewDueToday ?? 0),
+      rawValue: analytics?.totals?.reviewDueToday ?? 0,
+      suffix: "",
       delta: `Streak ${user?.streak?.current ?? 0} day${user?.streak?.current === 1 ? "" : "s"}`,
       icon: Clock,
     },
@@ -195,20 +230,22 @@ const Index = () => {
       <div className="px-6 lg:px-10 py-8 max-w-7xl mx-auto space-y-10">
         {/* Hero Section */}
         <section className="relative overflow-hidden rounded-2xl border border-border bg-gradient-hero p-8 lg:p-12">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,hsl(38_55%_58%/0.12),transparent_50%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,hsl(210_90%_65%/0.14),transparent_50%)]" />
           <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
             <div className="space-y-3 max-w-2xl">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-accent">
                 <Sparkles className="h-3.5 w-3.5" /> Intelligent Learning System
               </div>
 
-              <h1 className="font-serif text-4xl lg:text-6xl leading-[1.2] tracking-tight text-foreground break-words">
-                Welcome back,{" "}
+              <h1 className="font-serif text-4xl lg:text-6xl leading-[1.15] tracking-tight text-foreground break-words">
+                {getTimeGreeting()},{" "}
                 <span className="text-accent italic inline-block">{user?.name?.split(" ")[0] || "Learner"}</span>.
-                <br /> Your study deck awaits.
               </h1>
+              <p className="font-serif text-xl lg:text-2xl italic text-muted-foreground/90">
+                Your adaptive workspace is ready.
+              </p>
 
-              <p className="text-muted-foreground max-w-xl">
+              <p className="text-muted-foreground max-w-xl pt-1">
                 {analytics?.weakTopics?.length
                   ? `${analytics.weakTopics.length} weak topic${analytics.weakTopics.length > 1 ? "s" : ""} detected from your attempts.`
                   : "Upload PDFs, generate assessments, and AthenaeumAI will build your mastery map."}
@@ -234,7 +271,9 @@ const Index = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
-                  <p className="font-serif text-3xl mt-2 text-foreground">{s.value}</p>
+                  <p className="font-serif text-3xl mt-2 text-foreground">
+                    <AnimatedStat value={s.rawValue} suffix={s.suffix} />
+                  </p>
                   <p className="text-[11px] text-accent mt-1">{s.delta}</p>
                 </div>
                 <s.icon className="h-4 w-4 text-muted-foreground" />

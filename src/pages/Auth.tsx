@@ -1,4 +1,4 @@
-import { StarryBackground } from "@/components/StarryBackground";
+import { AuroraBackground } from "@/components/AuroraBackground";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,7 +52,7 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground relative overflow-hidden">
-      <StarryBackground />
+      <AuroraBackground />
       <div className="relative z-10 min-h-screen grid lg:grid-cols-[1fr_440px]">
         <section className="hidden lg:flex flex-col justify-between p-12">
           <div className="flex items-center gap-3">
@@ -70,9 +70,12 @@ const Auth = () => {
               <Sparkles className="h-3.5 w-3.5" /> Adaptive mastery engine
             </div>
             <h1 className="font-serif text-6xl leading-[1.08]">
-              Build a study system that remembers how you learn.
+              Master every subject.
             </h1>
-            <p className="text-muted-foreground max-w-xl">
+            <p className="font-serif text-2xl italic text-muted-foreground/90">
+              An adaptive knowledge graph, built around the way you think.
+            </p>
+            <p className="text-muted-foreground max-w-xl pt-1">
               Upload material, generate exam-style assessments, track weak topics, and turn every attempt into a personalized revision loop.
             </p>
           </div>
@@ -81,7 +84,7 @@ const Auth = () => {
         </section>
 
         <section className="flex items-center justify-center p-6">
-          <Card className="academic-card w-full max-w-md p-6">
+          <Card className="glass-panel border-transparent w-full max-w-md p-8">
             <div className="mb-6 lg:hidden flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center">
                 <GraduationCap className="h-5 w-5 text-accent" />
