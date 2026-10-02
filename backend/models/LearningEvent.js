@@ -32,7 +32,20 @@ const learningEventSchema = new mongoose.Schema(
     },
     result: {
       type: String,
-      enum: ["correct", "incorrect", "completed", "partial", "skipped", "reviewed"],
+      // "insufficient_context" is the Tutor recording a deliberate refusal to
+      // answer from absent evidence (`tutorService.js`). It was already being
+      // written here, but never added to this enum, so the write failed schema
+      // validation and the refusal reached the learner as an HTTP 400 instead.
+      // Additive: every previously valid value still validates.
+      enum: [
+        "correct",
+        "incorrect",
+        "completed",
+        "partial",
+        "skipped",
+        "reviewed",
+        "insufficient_context",
+      ],
       default: "completed",
     },
     confidence: {

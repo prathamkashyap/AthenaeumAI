@@ -152,24 +152,37 @@ export const askContextualTutor = async ({ userId, question, materialId = null }
       consideredCount: grounding.consideredCount,
     });
 
-    await recordLearningEvent({
-      userId,
-      topic: weakTopics[0]?.topic || retrievedTopics[0] || "General",
-      eventType: "ai_tutoring_interaction",
-      // Distinct from the pre-existing "partial", which meant the model failed or
-      // context was empty. Here the retrieval ran and returned nothing usable, so
-      // the interaction is recorded as a refusal rather than a partial answer.
-      result: "insufficient_context",
-      confidence: weakTopics[0]?.confidence || 0,
-      difficulty: weakTopics[0]?.recommendedDifficulty || "",
-      metadata: {
-        question: trimmedQuestion,
-        materialId,
-        retrievedChunkIds: materialContexts.map((context) => context._id),
-        sourceCount: materialContexts.length,
-        grounding,
-      },
-    });
+    // Recording the refusal is worth doing, but it is not worth failing the
+    // request over: refusing without evidence is a correct answer to the
+    // learner's question, and it must not depend on the health of an analytics
+    // write. Previously this call was unguarded and sat ahead of the `return`, so
+    // any failure in it replaced the refusal with an error response -- including
+    // the schema rejection this value used to cause.
+    try {
+      await recordLearningEvent({
+        userId,
+        topic: weakTopics[0]?.topic || retrievedTopics[0] || "General",
+        eventType: "ai_tutoring_interaction",
+        // Distinct from the pre-existing "partial", which meant the model failed or
+        // context was empty. Here the retrieval ran and returned nothing usable, so
+        // the interaction is recorded as a refusal rather than a partial answer.
+        result: "insufficient_context",
+        confidence: weakTopics[0]?.confidence || 0,
+        difficulty: weakTopics[0]?.recommendedDifficulty || "",
+        metadata: {
+          question: trimmedQuestion,
+          materialId,
+          retrievedChunkIds: materialContexts.map((context) => context._id),
+          sourceCount: materialContexts.length,
+          grounding,
+        },
+      });
+    } catch (err) {
+      logger.warn("Could not record the tutor grounding refusal", {
+        userId,
+        error: err.message,
+      });
+    }
 
     return {
       ...insufficientContextResponse({ question: trimmedQuestion, grounding }),
