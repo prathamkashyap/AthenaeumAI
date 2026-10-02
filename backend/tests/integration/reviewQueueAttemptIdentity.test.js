@@ -53,7 +53,14 @@ try {
   console.warn(`[reviewQueueAttemptIdentity] MongoDB unavailable, skipping: ${error.message}`);
 }
 
-const { enqueueFailedQuestionItems, snoozeReviewQueueItem } = await import("../../services/reviewQueueService.js");
+const {
+  enqueueFailedQuestionItems,
+  snoozeReviewQueueItem,
+  rebuildReviewQueueForUser,
+} = await import("../../services/reviewQueueService.js");
+
+// Topic rebuilds read progress, so the real UserProgress model is used here.
+const { default: UserProgress } = await import("../../models/UserProgress.js");
 
 afterAll(async () => {
   if (connected) {
@@ -666,6 +673,130 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     expect(String(item.source.flashcardSet)).toBe(String(setId));
     expect(isFuture(item.dueAt)).toBe(true);
     expect(item.priority).toBe(40);
+  });
+
+  // ─── A topic snooze survives a real rebuild ─────────────────────────────────
+
+  const topicFixture = (overrides = {}) => ({
+    topic: "Deadlock",
+    subject: "Operating Systems",
+    attempted: 3,
+    mastery: 30,
+    confidence: 40,
+    weaknessScore: 70,
+    reviewCount: 0,
+    lastWrongAt: null,
+    lastPracticedAt: new Date(Date.now() - 60 * 60 * 1000),
+    recommendedDifficulty: "Easy",
+    ...overrides,
+  });
+
+  const withProgressTopics = async (topics) => {
+    await UserProgress.deleteMany({ user });
+    await UserProgress.create({ user, totals: {}, topics });
+    await rebuildReviewQueueForUser(user);
+  };
+
+  const topicRow = async (topic = "Deadlock") =>
+    (await openItems()).find((i) => i.topic === topic && i.itemType.endsWith("_topic"));
+
+  beforeEach(async () => {
+    await UserProgress.deleteMany({ user });
+  });
+
+  afterAll(async () => {
+    if (connected) await UserProgress.deleteMany({ user });
+  });
+
+  test("a snoozed topic item keeps its future due date and priority", async () => {
+    await withProgressTopics([topicFixture()]);
+    const row = await topicRow();
+    await snoozeReviewQueueItem({ userId: user, itemId: row._id, hours: 48 });
+    const before = await ReviewQueue.findById(row._id).lean();
+    expect(isFuture(before.dueAt)).toBe(true);
+    expect(before.priority).toBe(40);
+
+    await rebuildReviewQueueForUser(user);
+
+    const after = await ReviewQueue.findById(row._id).lean();
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(new Date(after.dueAt).getTime()).toBe(new Date(before.dueAt).getTime());
+    expect(after.priority).toBe(40);
+  });
+
+  test("repeated rebuilds do not resurface or duplicate the item", async () => {
+    await withProgressTopics([topicFixture()]);
+    const row = await topicRow();
+    await snoozeReviewQueueItem({ userId: user, itemId: row._id, hours: 48 });
+
+    await rebuildReviewQueueForUser(user);
+    await rebuildReviewQueueForUser(user);
+    await rebuildReviewQueueForUser(user);
+
+    expect(await openItems()).toHaveLength(1);
+    const after = await ReviewQueue.findById(row._id).lean();
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(after.priority).toBe(40);
+  });
+
+  test("an unsnoozed topic item still receives the rebuild's scheduling", async () => {
+    await withProgressTopics([topicFixture()]);
+
+    await rebuildReviewQueueForUser(user);
+
+    const after = await topicRow();
+    expect(isFuture(after.dueAt)).toBe(false);
+    expect(after.priority).toBe(70);
+  });
+
+  test("a falling rebuild priority is written rather than frozen", async () => {
+    await withProgressTopics([topicFixture()]);
+    expect((await topicRow()).priority).toBe(70);
+
+    await withProgressTopics([topicFixture({ mastery: 50, weaknessScore: 30 })]);
+
+    expect((await topicRow()).priority).toBe(60);
+  });
+
+  test("topics are independent: one snoozed, one rebuilding", async () => {
+    await withProgressTopics([
+      topicFixture(),
+      topicFixture({ topic: "Paging", weaknessScore: 60 }),
+    ]);
+    const deadlocked = await topicRow("Deadlock");
+    await snoozeReviewQueueItem({ userId: user, itemId: deadlocked._id, hours: 48 });
+
+    await rebuildReviewQueueForUser(user);
+
+    expect(isFuture((await topicRow("Deadlock")).dueAt)).toBe(true);
+    expect(isFuture((await topicRow("Paging")).dueAt)).toBe(false);
+    expect((await topicRow("Paging")).priority).toBe(60);
+  });
+
+  test("the itemType classification is unchanged by the preservation path", async () => {
+    await withProgressTopics([
+      topicFixture({ topic: "Confident", confidence: 80, weaknessScore: 50 }),
+      topicFixture({ topic: "Anxious", confidence: 40, weaknessScore: 10 }),
+    ]);
+
+    await rebuildReviewQueueForUser(user);
+
+    expect((await topicRow("Confident")).itemType).toBe("weak_topic");
+    expect((await topicRow("Anxious")).itemType).toBe("low_confidence_topic");
+  });
+
+  test("a failed-question snooze is unaffected by the topic path", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+    const [item] = await openItems();
+    await snoozeReviewQueueItem({ userId: user, itemId: item._id, hours: 48 });
+
+    await withProgressTopics([topicFixture()]);
+    await rebuildReviewQueueForUser(user);
+
+    const after = await ReviewQueue.findById(item._id).lean();
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(after.priority).toBe(40);
   });
 
   // ─── The deployment trap ───────────────────────────────────────────────────

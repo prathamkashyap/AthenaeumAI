@@ -22,6 +22,7 @@ import { jest } from "@jest/globals";
 // ─── Mongoose boundary mocks ──────────────────────────────────────────────────
 
 const reviewQueueFind = jest.fn();
+const reviewQueueFindOne = jest.fn();
 const reviewQueueFindOneAndUpdate = jest.fn();
 const reviewQueueCountDocuments = jest.fn();
 const flashcardSetFind = jest.fn();
@@ -29,6 +30,11 @@ const userProgressFindOne = jest.fn();
 const learningEventCreate = jest.fn();
 
 /** A chainable, awaitable query stub that records the chain methods used. */
+const leanOf = (data) => ({
+  lean: () => Promise.resolve(data),
+  then: (resolve, reject) => Promise.resolve(data).then(resolve, reject),
+});
+
 const queryOf = (data) => {
   const chain = { sort: null, skip: null, limit: null, select: null, populate: null };
   const query = {
@@ -47,6 +53,9 @@ const queryOf = (data) => {
 jest.unstable_mockModule("../../models/ReviewQueue.js", () => ({
   default: {
     find: reviewQueueFind,
+    // Read before the topic-scheduling decision is made. Defaults to "no stored row",
+    // which is the ordinary case for a first-time rebuild.
+    findOne: reviewQueueFindOne,
     findOneAndUpdate: reviewQueueFindOneAndUpdate,
     countDocuments: reviewQueueCountDocuments,
   },
@@ -92,6 +101,7 @@ beforeEach(() => {
   reviewQueueFindOneAndUpdate.mockImplementation(async (filter, update, options = {}) =>
     options?.upsert ? { _id: "rq-1", ...update.$set } : null
   );
+  reviewQueueFindOne.mockImplementation(() => leanOf(null));
   flashcardSetFind.mockReturnValue(queryOf([]));
   userProgressFindOne.mockReturnValue(queryOf(null));
   learningEventCreate.mockResolvedValue({ _id: "event-1" });
@@ -458,12 +468,18 @@ describe("rebuildReviewQueueForUser — flashcard items", () => {
     });
   });
 
-  test("emits topic items before flashcard items", async () => {
+  // Both families are emitted, whatever order they land in. Topic items read the
+  // stored row to decide whether a snooze should be preserved, which they must do
+  // before writing, so a topic upsert is now necessarily preceded by a round trip
+  // that a flashcard upsert does not need. The two have independent identities and
+  // neither depends on the other, so the relative order was an artifact of
+  // `Promise.all` rather than a guarantee, and is not asserted.
+  test("emits both topic and flashcard items in one rebuild", async () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     withFlashcards([set("deck-1", "OS Deck", [card("c1", "Paging", { nextReviewAt: NOW })])]);
     await rebuildReviewQueueForUser(USER_ID);
-    expect(upserts().map((call) => call[1].$set.itemType)).toEqual([
-      "low_confidence_topic", "due_flashcard",
+    expect(upserts().map((call) => call[1].$set.itemType).sort()).toEqual([
+      "due_flashcard", "low_confidence_topic",
     ]);
   });
 });

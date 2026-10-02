@@ -352,7 +352,18 @@ jest.unstable_mockModule("../../models/LearningEvent.js", () => ({
   default: { create: learningEventCreate, insertMany: learningEventInsertMany },
 }));
 jest.unstable_mockModule("../../models/ReviewQueue.js", () => ({
-  default: { findOneAndUpdate: reviewQueueFindOneAndUpdate, find: reviewQueueFind, countDocuments: reviewQueueCountDocuments },
+  default: {
+    findOneAndUpdate: reviewQueueFindOneAndUpdate,
+    find: reviewQueueFind,
+    // Read before the topic-scheduling decision. This suite's contract is the
+    // worker's idempotency, not topic snooze, so it answers "no stored row" and
+    // lets the rebuild write its own scheduling.
+    findOne: jest.fn(() => ({
+      lean: () => Promise.resolve(null),
+      then: (resolve, reject) => Promise.resolve(null).then(resolve, reject),
+    })),
+    countDocuments: reviewQueueCountDocuments,
+  },
 }));
 jest.unstable_mockModule("../../models/FlashcardSet.js", () => ({ default: { find: flashcardSetFind } }));
 jest.unstable_mockModule("../../models/QuizAttempt.js", () => ({

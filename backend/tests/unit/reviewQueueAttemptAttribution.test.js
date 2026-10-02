@@ -25,6 +25,9 @@ import { jest } from "@jest/globals";
 
 const reviewQueueFindOneAndUpdate = jest.fn();
 const reviewQueueFind = jest.fn();
+// Read before the topic-scheduling decision; backed by the same store so the
+// decision is made against real document state rather than a canned answer.
+const reviewQueueFindOne = jest.fn();
 const reviewQueueCountDocuments = jest.fn();
 const flashcardSetFind = jest.fn();
 const userProgressFindOne = jest.fn();
@@ -136,6 +139,9 @@ const reviewQueueUpdateMany = jest.fn(async (filter, update) => {
 });
 
 reviewQueueFind.mockImplementation((filter) => chainOf(store.queueItems.filter((i) => matches(i, filter))));
+reviewQueueFindOne.mockImplementation((filter) =>
+  chainOf(store.queueItems.find((item) => matches(item, filter)) || null),
+);
 reviewQueueCountDocuments.mockImplementation(async (filter) => store.queueItems.filter((i) => matches(i, filter)).length);
 flashcardSetFind.mockImplementation(() => chainOf([]));
 userProgressFindOne.mockImplementation(() => chainOf(null));
@@ -143,6 +149,7 @@ userProgressFindOne.mockImplementation(() => chainOf(null));
 jest.unstable_mockModule("../../models/ReviewQueue.js", () => ({
   default: {
     find: reviewQueueFind,
+    findOne: reviewQueueFindOne,
     findOneAndUpdate: reviewQueueFindOneAndUpdate,
     updateMany: reviewQueueUpdateMany,
     countDocuments: reviewQueueCountDocuments,
@@ -668,6 +675,207 @@ describe("item types with no question keep their identity", () => {
 
     expect(openItems("failed_question")).toHaveLength(2);
     expect(openItems("weak_topic")).toHaveLength(1);
+  });
+});
+
+// ─── A topic snooze survives a rebuild ─────────────────────────────────────────
+
+/**
+ * A topic item has no scheduler behind it: its `dueAt` is the scheduling state.
+ * A snooze applied to one is therefore the only record of that decision, and the
+ * rebuild runs on every dashboard load.
+ */
+describe("a snoozed topic item survives a rebuild", () => {
+  const isFuture = (d) => new Date(d).getTime() > Date.now();
+
+  /** Progress with two topics, one strong and one weak, both rebuild-eligible. */
+  const twoWeakTopics = () =>
+    userProgressFindOne.mockImplementation(() =>
+      chainOf({
+        _id: "progress-1",
+        user: USER,
+        totals: {},
+        topics: [
+          { topic: "Deadlock", subject: "Operating Systems", attempted: 3, mastery: 30, confidence: 40, weaknessScore: 70, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+          { topic: "Paging", subject: "Operating Systems", attempted: 2, mastery: 35, confidence: 45, weaknessScore: 60, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+        ],
+      }),
+    );
+
+  const topicItems = () => openItems().filter((i) => i.itemType.endsWith("_topic"));
+  const topicItem = (topic) => topicItems().find((i) => i.topic === topic);
+  const snoozeTopic = (topic, hours = 48) =>
+    snoozeQueueItem({ userId: USER, itemId: topicItem(topic)._id, hours });
+
+  beforeEach(() => {
+    twoWeakTopics();
+  });
+
+  test("the snoozed due date is preserved", async () => {
+    await rebuildReviewQueueForUser(USER);
+    await snoozeTopic("Deadlock");
+    const before = topicItem("Deadlock");
+    expect(isFuture(before.dueAt)).toBe(true);
+
+    await rebuildReviewQueueForUser(USER);
+
+    const after = topicItem("Deadlock");
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(new Date(after.dueAt).getTime()).toBe(new Date(before.dueAt).getTime());
+  });
+
+  test("the snoozed priority is preserved", async () => {
+    await rebuildReviewQueueForUser(USER);
+    await snoozeTopic("Deadlock");
+    expect(topicItem("Deadlock").priority).toBe(40);
+
+    await rebuildReviewQueueForUser(USER);
+
+    // The rebuild would otherwise recompute max(70, 60) = 70.
+    expect(topicItem("Deadlock").priority).toBe(40);
+  });
+
+  test("the producer still refreshes every other field", async () => {
+    await rebuildReviewQueueForUser(USER);
+    await snoozeTopic("Deadlock");
+
+    twoWeakTopics();
+    await rebuildReviewQueueForUser(USER);
+
+    const after = topicItem("Deadlock");
+    expect(after.metadata.weaknessScore).toBe(70);
+    expect(after.title).toBe("Rebuild confidence: Deadlock");
+    expect(isFuture(after.dueAt)).toBe(true);
+    expect(after.priority).toBe(40);
+  });
+
+  test("an unsnoozed topic still receives the rebuild's due date and priority", async () => {
+    await rebuildReviewQueueForUser(USER);
+    expect(isFuture(topicItem("Deadlock").dueAt)).toBe(false);
+
+    await rebuildReviewQueueForUser(USER);
+
+    const after = topicItem("Deadlock");
+    expect(isFuture(after.dueAt)).toBe(false);
+    expect(after.priority).toBe(70);
+  });
+
+  test("an unsnoozed topic whose priority falls is written, not frozen", async () => {
+    // The reason $min cannot be reused here. A snooze forces 40, so $min would pin
+    // every unsnoozed topic at 40 or below the moment it dropped past that.
+    await rebuildReviewQueueForUser(USER);
+    expect(topicItem("Deadlock").priority).toBe(70);
+
+    // Same topic, weaker: max(30, 100 - 40) = 60. Still eligible (confidence < 55).
+    userProgressFindOne.mockImplementation(() =>
+      chainOf({
+        _id: "progress-1", user: USER, totals: {},
+        topics: [
+          { topic: "Deadlock", subject: "Operating Systems", attempted: 3, mastery: 50, confidence: 40, weaknessScore: 30, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+          { topic: "Paging", subject: "Operating Systems", attempted: 2, mastery: 35, confidence: 45, weaknessScore: 60, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+        ],
+      }),
+    );
+    await rebuildReviewQueueForUser(USER);
+
+    expect(topicItem("Deadlock").priority).toBe(60);
+  });
+
+  test("topics are independent: snoozing one leaves the other rebuilding", async () => {
+    await rebuildReviewQueueForUser(USER);
+    await snoozeTopic("Deadlock");
+
+    await rebuildReviewQueueForUser(USER);
+
+    expect(isFuture(topicItem("Deadlock").dueAt)).toBe(true);
+    expect(isFuture(topicItem("Paging").dueAt)).toBe(false);
+    expect(topicItem("Paging").priority).toBe(60);
+  });
+
+  test("a new topic item is created with the rebuild's own values", async () => {
+    await rebuildReviewQueueForUser(USER);
+    await snoozeTopic("Deadlock");
+
+    // A second topic appearing for the first time is created, not preserved.
+    userProgressFindOne.mockImplementation(() =>
+      chainOf({
+        _id: "progress-1", user: USER, totals: {},
+        topics: [
+          { topic: "Deadlock", subject: "Operating Systems", attempted: 3, mastery: 30, confidence: 40, weaknessScore: 70, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+          { topic: "Paging", subject: "Operating Systems", attempted: 2, mastery: 35, confidence: 45, weaknessScore: 60, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+          { topic: "Scheduling", subject: "Operating Systems", attempted: 1, mastery: 20, confidence: 50, weaknessScore: 80, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+        ],
+      }),
+    );
+    await rebuildReviewQueueForUser(USER);
+
+    expect(topicItem("Scheduling")).toBeDefined();
+    expect(isFuture(topicItem("Scheduling").dueAt)).toBe(false);
+    expect(topicItem("Scheduling").priority).toBe(80);
+    expect(isFuture(topicItem("Deadlock").dueAt)).toBe(true);
+  });
+
+  test("the weak_topic / low_confidence_topic classification is unchanged", async () => {
+    userProgressFindOne.mockImplementation(() =>
+      chainOf({
+        _id: "progress-1", user: USER, totals: {},
+        topics: [
+          { topic: "Confident", subject: "OS", attempted: 2, mastery: 40, confidence: 80, weaknessScore: 50, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+          { topic: "Anxious", subject: "OS", attempted: 2, mastery: 40, confidence: 40, weaknessScore: 10, reviewCount: 0, lastWrongAt: null, lastPracticedAt: new Date(NOW.getTime() - 60 * 60 * 1000), recommendedDifficulty: "Easy" },
+        ],
+      }),
+    );
+    await rebuildReviewQueueForUser(USER);
+
+    expect(topicItem("Confident").itemType).toBe("weak_topic");
+    expect(topicItem("Anxious").itemType).toBe("low_confidence_topic");
+  });
+
+  test("a snoozed flashcard item is still rescheduled from its card", async () => {
+    // The preservation is scoped to topic items on purpose. A flashcard item's
+    // dueAt mirrors the card's own SM-2 schedule, so a rebuild must keep restoring
+    // it: the card is still due, and queue-level snooze is not authoritative there.
+    const cardDue = new Date(NOW.getTime() - 12 * 60 * 60 * 1000);
+    flashcardSetFind.mockImplementation(() =>
+      chainOf([
+        {
+          _id: "set-1",
+          title: "Deck",
+          cards: [
+            {
+              _id: "card-1",
+              front: "front",
+              topic: "Paging",
+              review: { nextReviewAt: cardDue, dueAt: cardDue, interval: 3, repetitions: 2 },
+            },
+          ],
+        },
+      ]),
+    );
+
+    await rebuildReviewQueueForUser(USER);
+    const flashcardRow = openItems().find((i) => i.itemType.endsWith("flashcard") || i.itemType === "overdue_review");
+    expect(flashcardRow).toBeDefined();
+
+    await snoozeQueueItem({ userId: USER, itemId: flashcardRow._id, hours: 48 });
+    expect(isFuture(flashcardRow.dueAt)).toBe(true);
+
+    await rebuildReviewQueueForUser(USER);
+
+    const after = openItems().find((i) => String(i.source?.flashcardId) === "card-1");
+    expect(isFuture(after.dueAt)).toBe(false);
+    expect(new Date(after.dueAt).getTime()).toBe(cardDue.getTime());
+  });
+
+  test("a rebuild still leaves failed-question rows untouched", async () => {
+    await enqueue("attempt-1", [
+      mistake({ topic: "Deadlock", questionIndex: 1 }),
+      mistake({ topic: "Deadlock", questionIndex: 4 }),
+    ]);
+
+    await rebuildReviewQueueForUser(USER);
+
+    expect(openItems("failed_question")).toHaveLength(2);
   });
 });
 

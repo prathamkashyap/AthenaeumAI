@@ -18,6 +18,17 @@ const ATTEMPT_SCOPED_ITEM_TYPES = new Set(["failed_question"]);
 // The `source` fields declared on the ReviewQueue schema.
 const SOURCE_FIELDS = ["quiz", "attempt", "flashcardSet", "flashcardId"];
 
+// Topic-derived review items. Listed separately from ATTEMPT_SCOPED_ITEM_TYPES
+// because their snooze needs a different mechanism, not because they share one.
+const TOPIC_ITEM_TYPES = new Set(["weak_topic", "low_confidence_topic"]);
+
+/**
+ * A snoozed item is still `open` with a future `dueAt`; that is the only signal
+ * there is, since there is no snoozed status. Shared by the topic path below and
+ * asserted by the tests, so the definition lives with the behaviour it describes.
+ */
+const isSnoozed = (dueAt) => Boolean(dueAt) && new Date(dueAt).getTime() > Date.now();
+
 const upsertOpenQueueItem = async (item) => {
   if (ATTEMPT_SCOPED_ITEM_TYPES.has(item.itemType) && !item.source?.attempt) {
     const error = new Error(
@@ -90,6 +101,33 @@ const upsertOpenQueueItem = async (item) => {
     update.$set = withoutScheduling;
     update.$max = { dueAt };
     update.$min = { priority };
+  }
+
+  // A topic item's `dueAt` is its only scheduling state -- nothing outside the
+  // queue computes it -- so a snooze applied to one is the only record of that
+  // decision, and a rebuild would otherwise throw it away on every dashboard load.
+  //
+  // The mechanism is deliberately not the `$max`/`$min` pair used for a failed
+  // question. `dueAt` alone could reuse `$max`, since the rebuild value is always
+  // `now`; `priority` cannot, because it is computed per rebuild and can fall below
+  // the 40 a snooze forces -- `$min` would destroy the demotion and, worse, freeze
+  // an unsnoozed row's priority precisely when the learner improves. So the
+  // decision is taken from the stored row and the fields are simply left out of the
+  // payload, which keeps the single findOneAndUpdate that does the write.
+  //
+  // Costs one extra read per topic item per rebuild, in a background job. The
+  // atomic alternative is an aggregation-pipeline update with `$cond`, which would
+  // change the update shape for all three writes including the upsert, where a
+  // pipeline has to rebuild a missing document out of the filter. Not worth it.
+  //
+  // A snooze landing between the read and the write would still be overwritten; that
+  // window is one round trip, and closing it needs the conditional update above.
+  if (TOPIC_ITEM_TYPES.has(item.itemType)) {
+    const existing = await ReviewQueue.findOne(filter).lean();
+    if (isSnoozed(existing?.dueAt)) {
+      const { dueAt, priority, ...withoutScheduling } = update.$set;
+      update.$set = withoutScheduling;
+    }
   }
 
   const hasQuestionIdentity =
