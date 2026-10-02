@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { APIRequestContext, expect, test } from '@playwright/test';
 import {
   api,
   authHeaders,
@@ -7,6 +7,19 @@ import {
   probeMongoDeployment,
   signup,
 } from './helpers/api';
+
+/** The question document `seedQuiz` writes into the `quizzes` collection. */
+type SeededQuestion = {
+  question: string;
+  options: string[];
+  answer: number;
+  explanation: string;
+  topic: string;
+  cognitiveLevel: string;
+};
+
+/** What `seedQuiz` hands back, and what the attempt helpers accept. */
+type SeededQuiz = { id: string; questions: SeededQuestion[] };
 
 /**
  * E2E — the asynchronous job contract, over real HTTP and a real database.
@@ -50,7 +63,7 @@ test.beforeAll(async () => {
  * only: the behaviour under test is attempt submission, job tracking and status
  * reporting, all of which go through the real HTTP API.
  */
-const seedQuiz = async (userId: string, count = 3) => {
+const seedQuiz = async (userId: string, count = 3): Promise<SeededQuiz> => {
   // The driver is a backend dependency, so it is resolved from the backend install
   // rather than adding a root dependency for test convenience.
   const { createRequire } = await import('module');
@@ -119,9 +132,9 @@ const readPersisted = async (collection: string, id: string) => {
 
 /** Submits an attempt over real HTTP and returns the tracked job id. */
 const submitAttempt = async (
-  request: any,
+  request: APIRequestContext,
   token: string,
-  quiz: { id: string; questions: any[] },
+  quiz: SeededQuiz,
   { withBody = false } = {},
 ) => {
   const response = await request.post(api(`/quiz/${quiz.id}/attempt`), {
@@ -129,7 +142,7 @@ const submitAttempt = async (
     data: {
       score: 1,
       total: quiz.questions.length,
-      answers: quiz.questions.map((q: any, index: number) =>
+      answers: quiz.questions.map((q, index) =>
         index % 2 === 0 ? q.answer : (q.answer + 1) % 4,
       ),
       durationSeconds: 30,
@@ -316,7 +329,7 @@ test.describe('C. Public contract safety', () => {
       data: {
         score: 1,
         total: quiz.questions.length,
-        answers: quiz.questions.map((q: any) => q.answer),
+        answers: quiz.questions.map((q) => q.answer),
         durationSeconds: 15,
       },
     });
