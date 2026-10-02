@@ -163,7 +163,10 @@ test.describe('UI Workflows & Mocking', () => {
     // Should navigate away from auth
     await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 10000 });
 
-    await expect(page.locator('text=Welcome back,').first()).toBeVisible();
+    // The dashboard greeting is time-of-day based ("Good morning" / "Good evening" / …),
+    // so assert the heading rendered with the learner's name instead of pinning one
+    // greeting string — otherwise this test fails depending on when it runs.
+    await expect(page.locator('h1')).toContainText('E2E');
     await expect(page.locator('text=E2E').first()).toBeVisible();
   });
 
