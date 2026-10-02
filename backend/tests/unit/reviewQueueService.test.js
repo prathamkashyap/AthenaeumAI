@@ -483,11 +483,11 @@ describe("upsert interaction", () => {
     expect(filter["source.flashcardId"]).toBe("c1");
   });
 
-  // This test previously asserted that the filter carried the quiz id *only*.
-  // That encoded the defect this task corrects: it made the application identity
-  // for a failed question strictly narrower than the open-item unique index,
-  // which already treats `source.attempt` as part of that identity.
-  test("identifies a failed question by quiz and attempt, matching the unique index", async () => {
+  // The filter is the application half of the open-item unique index, and it is
+  // asserted by its exact key set on purpose: a narrower filter means the
+  // database's uniqueness is decided by a key the service does not match on, which
+  // is precisely how two mistakes on one topic collapsed into a single row.
+  test("identifies a failed question by quiz, attempt and question, matching the unique index", async () => {
     await enqueueFailedQuestionItems({
       userId: USER_ID,
       quiz: { _id: "quiz-1", subject: "Operating Systems" },
@@ -497,14 +497,53 @@ describe("upsert interaction", () => {
     const [filter] = reviewQueueFindOneAndUpdate.mock.calls[0];
     expect(filter["source.quiz"]).toBe("quiz-1");
     expect(filter["source.attempt"]).toBe("attempt-1");
+    expect(filter.questionIndex).toBe(2);
     expect(Object.keys(filter).sort()).toEqual([
       "itemType",
+      "questionIndex",
       "source.attempt",
       "source.quiz",
       "status",
       "topic",
       "user",
     ]);
+  });
+
+  // A question index of 0 is a real question, not an absent one, so the guard must
+  // not be a truthiness check.
+  test("keeps a question index of zero in the identity", async () => {
+    await enqueueFailedQuestionItems({
+      userId: USER_ID,
+      quiz: { _id: "quiz-1", subject: "Operating Systems" },
+      attempt: { _id: "attempt-1" },
+      mistakeAnalyses: [{ questionIndex: 0, topic: "Deadlock" }],
+    });
+    const [filter] = reviewQueueFindOneAndUpdate.mock.calls[0];
+    expect(Object.keys(filter)).toContain("questionIndex");
+    expect(filter.questionIndex).toBe(0);
+  });
+
+  test("writes the question index as a first-class field, not only into metadata", async () => {
+    await enqueueFailedQuestionItems({
+      userId: USER_ID,
+      quiz: { _id: "quiz-1", subject: "Operating Systems" },
+      attempt: { _id: "attempt-1" },
+      mistakeAnalyses: [{ questionIndex: 2, topic: "Deadlock" }],
+    });
+    expect(upsertedItem(0).questionIndex).toBe(2);
+    // Deliberately duplicated so the review UI keeps rendering its `Q{n}` badge
+    // without a frontend change.
+    expect(upsertedItem(0).metadata.questionIndex).toBe(2);
+  });
+
+  // The four item types that are not scoped to a question must not grow a key that
+  // carries no information; adding it unconditionally would enlarge every index
+  // entry while contributing no selectivity.
+  test("gives topic items an identity with no question key at all", async () => {
+    withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
+    await rebuildReviewQueueForUser(USER_ID);
+    const [filter] = reviewQueueFindOneAndUpdate.mock.calls[0];
+    expect(Object.keys(filter)).not.toContain("questionIndex");
   });
 
   test("gives two attempts on the same quiz distinct identities", async () => {

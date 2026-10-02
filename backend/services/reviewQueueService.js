@@ -39,6 +39,12 @@ const upsertOpenQueueItem = async (item) => {
   // item carries no attempt, so topic and flashcard items keep deduplicating
   // across attempts exactly as before.
   if (item.source?.attempt) filter["source.attempt"] = item.source.attempt;
+  // Part of the identity for the same reason, and omitted when absent so the four
+  // item types that are not scoped to a question keep deduplicating by topic
+  // exactly as before. Matches the open-item unique index.
+  if (item.questionIndex !== undefined && item.questionIndex !== null) {
+    filter.questionIndex = item.questionIndex;
+  }
   if (item.source?.flashcardSet) filter["source.flashcardSet"] = item.source.flashcardSet;
   if (item.source?.flashcardId) filter["source.flashcardId"] = item.source.flashcardId;
 
@@ -80,6 +86,12 @@ export const enqueueFailedQuestionItems = async ({ userId, quiz, attempt, mistak
       quiz: quiz._id,
       attempt: attempt._id,
     },
+    // Two mistakes in one attempt can share a topic -- and when the generator
+    // omits a topic they all normalise to "General" -- so without this the second
+    // upsert matched and overwrote the first, losing a diagnosis. Also written
+    // into `metadata` below as a deliberate denormalisation, so the review UI
+    // keeps rendering its `Q{n}` badge with no frontend change.
+    questionIndex: analysis.questionIndex,
     metadata: {
       questionIndex: analysis.questionIndex,
       misconception: analysis.misconception,

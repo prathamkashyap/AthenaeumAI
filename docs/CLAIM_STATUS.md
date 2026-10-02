@@ -382,10 +382,26 @@ different endpoints.
 
 Topic items are capped at 12 (`:60`); weak topics in analytics are capped at 6
 (`analyticsService.js:68`). Upsert key is `{ user, itemType, topic, status: "open" }` plus
-`source.quiz` / `source.flashcardSet` / `source.flashcardId` (`:8-25`). Listing sorts by
-`priority` desc then `dueAt` asc (`:126-132`). Completion sets `status: "completed"` and records a
-`revision_completed` `LearningEvent` (`:145-174`). Snooze sets `dueAt = now + hours` and forces
-`priority = 40` (`:176-190`).
+`source.quiz` / `source.attempt` / `source.flashcardSet` / `source.flashcardId`, and
+`questionIndex` when the item carries one — that set mirrors the open-item unique index
+exactly, and it is deliberately the same set. `source.attempt` separates two attempts at one
+quiz; `questionIndex` separates two wrong questions inside one attempt, which matters because a
+missing question topic normalises to `"General"` for every question, so same-topic collisions
+are the default case rather than a rare one. `questionIndex` is omitted for the four types that
+are not scoped to a question, so their topic-level deduplication is unchanged. The remaining
+`source.*` keys are written per-key rather than as one subdocument, so a replay cannot erase a
+`source.flashcardSet` link that was added after the item was created.
+
+Listing sorts by `priority` desc then `dueAt` asc (`:126-132`). Completion sets
+`status: "completed"` and records a `revision_completed` `LearningEvent` (`:145-174`). Snooze
+sets `dueAt = now + hours` and forces `priority = 40` (`:176-190`).
+
+Changing an index definition is not a migration here. Mongoose's automatic index build only
+creates indexes and never drops a superseded one, so a widened unique index leaves the old
+coarse index in force and still rejecting the writes the change exists to permit. Run
+`npm run indexes:sync` (`--dry-run` to preview) once per deployment after any index change;
+it drops what the schema no longer declares and then asserts ReviewQueue enforces exactly one
+unique index.
 
 ### 2.5 Quiz generation
 

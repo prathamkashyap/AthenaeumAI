@@ -10,6 +10,7 @@
     "build": "node --check server.js && node --check worker.js",
     "seed:demo": "node scripts/seedDemo.js",
     "verify:demo": "node scripts/verifyDemo.js",
+    "indexes:sync": "node scripts/syncIndexes.js",
     "smoke": "node scripts/smokeTest.js",
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "test:unit": "node --experimental-vm-modules node_modules/.bin/jest --testPathPatterns=tests/unit",
@@ -17,7 +18,13 @@
     "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
     "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch"
   },
-  "keywords": ["ai", "learning-platform", "quiz-generation", "spaced-repetition", "rag"],
+  "keywords": [
+    "ai",
+    "learning-platform",
+    "quiz-generation",
+    "spaced-repetition",
+    "rag"
+  ],
   "author": "Pratham Kashyap",
   "license": "MIT",
   "dependencies": {

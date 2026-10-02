@@ -80,6 +80,10 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     if (connected) await ReviewQueue.deleteMany({});
   });
 
+  /** The superseded index name, as MongoDB derives it from the old key spec. */
+  const COARSE_INDEX_NAME =
+    "user_1_itemType_1_topic_1_source.quiz_1_source.attempt_1_source.flashcardSet_1_source.flashcardId_1";
+
   const mistake = (overrides = {}) => ({
     questionIndex: 2,
     topic: "Deadlock",
@@ -204,6 +208,10 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
         priority: 80,
         status: "open",
         source: { quiz, attempt },
+        // Question identity is part of the item, so a genuine duplicate has to
+        // repeat it. Omitting it here would produce a different item, which the
+        // widened index correctly permits.
+        questionIndex: 2,
         metadata: { questionIndex: 2 },
       })
     ).rejects.toMatchObject({ code: 11000 });
@@ -300,6 +308,176 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
     expect(String(firstItem.source.flashcardSet)).toBe(String(setId));
     expect(String(firstItem.source.attempt)).toBe(String(first));
     expect(secondItem.source.flashcardSet ?? null).toBeNull();
+  });
+
+  // ─── One item per wrong question, enforced by the real index ────────────────
+
+  test("one enqueue carrying two same-topic mistakes writes two items", async () => {
+    const attemptId = oid();
+
+    await enqueue(attemptId, [
+      mistake({ topic: "General", questionIndex: 1 }),
+      mistake({ topic: "General", questionIndex: 4 }),
+    ]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.questionIndex).sort()).toEqual([1, 4]);
+  });
+
+  test("the same attempt reporting its two mistakes separately still yields two", async () => {
+    const attemptId = oid();
+
+    // Same attempt, same topic, one delivery per mistake.
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const items = await openItems();
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => String(i.source.attempt))).toEqual([String(attemptId), String(attemptId)]);
+  });
+
+  test("replaying one same-topic mistake does not duplicate it", async () => {
+    const attemptId = oid();
+    const analyses = [mistake({ topic: "General", questionIndex: 1 })];
+
+    await enqueue(attemptId, analyses);
+    await enqueue(attemptId, analyses);
+    await enqueue(attemptId, analyses);
+
+    expect(await openItems()).toHaveLength(1);
+  });
+
+  test("two attempts asking the same question number stay distinct", async () => {
+    await enqueue(oid(), [mistake({ topic: "General", questionIndex: 1 })]);
+    await enqueue(oid(), [mistake({ topic: "General", questionIndex: 1 })]);
+
+    expect(await openItems()).toHaveLength(2);
+  });
+
+  test("a failed question stores its question index as a first-class field", async () => {
+    await enqueue(oid(), [mistake({ topic: "General", questionIndex: 4 })]);
+
+    const [item] = await openItems();
+    expect(item.questionIndex).toBe(4);
+    // Still duplicated into metadata so the review UI's Q{n} badge is unaffected.
+    expect(item.metadata.questionIndex).toBe(4);
+  });
+
+  test("a true duplicate of the same question is still refused by the index", async () => {
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+
+    // Bypasses the filter under test and asks the index alone.
+    await expect(
+      ReviewQueue.create({
+        user,
+        itemType: "failed_question",
+        subject: "Operating Systems",
+        topic: "General",
+        title: "Fix misconception: General",
+        priority: 80,
+        status: "open",
+        source: { quiz, attempt: attemptId },
+        questionIndex: 1,
+        metadata: { questionIndex: 1 },
+      })
+    ).rejects.toMatchObject({ code: 11000 });
+  });
+
+  test("two questions on one named topic are both kept", async () => {
+    await enqueue(oid(), [
+      mistake({ topic: "Deadlock", questionIndex: 1 }),
+      mistake({ topic: "Deadlock", questionIndex: 4 }),
+    ]);
+
+    const items = await openItems();
+    expect(items.every((i) => i.questionIndex !== undefined)).toBe(true);
+    expect(items.map((i) => i.questionIndex).sort()).toEqual([1, 4]);
+  });
+
+  // ─── The deployment trap ───────────────────────────────────────────────────
+  //
+  // Mongoose's automatic index build only ever calls createIndex, so widening the
+  // unique index's key spec leaves the superseded coarse index in place -- still
+  // unique, still enforced, and still rejecting the insert this change exists to
+  // permit. A schema edit alone would therefore deploy successfully, pass every
+  // test that runs against a fresh database, and change nothing in production.
+  //
+  // This test reproduces that state deliberately.
+
+  const COARSE_INDEX = {
+    user: 1,
+    itemType: 1,
+    topic: 1,
+    "source.quiz": 1,
+    "source.attempt": 1,
+    "source.flashcardSet": 1,
+    "source.flashcardId": 1,
+  };
+
+  /**
+   * Restores exactly the index state a pre-fix deployment would have: the coarse
+   * unique index, and no question-aware one. Anything else would not be the bug.
+   */
+  const restorePreFixIndexes = async () => {
+    const existing = await ReviewQueue.collection.indexes();
+    for (const index of existing) {
+      if (index.unique && index.name !== COARSE_INDEX_NAME) {
+        await ReviewQueue.collection.dropIndex(index.name);
+      }
+    }
+    const now = await ReviewQueue.collection.indexes();
+    if (!now.some((i) => i.name === COARSE_INDEX_NAME)) {
+      await ReviewQueue.collection.createIndex(COARSE_INDEX, {
+        unique: true,
+        partialFilterExpression: { status: "open" },
+      });
+    }
+  };
+
+  test("a coarse index left behind by an earlier deploy is dropped by reconciliation", async () => {
+    // Recreate the pre-fix deployment state.
+    await restorePreFixIndexes();
+
+    const before = (await ReviewQueue.collection.indexes()).filter((i) => i.unique);
+    expect(before).toHaveLength(1);
+    expect(before[0].name).toBe(COARSE_INDEX_NAME);
+
+    // What `npm run indexes:sync` performs.
+    await ReviewQueue.syncIndexes();
+
+    const after = (await ReviewQueue.collection.indexes()).filter((i) => i.unique);
+    expect(after).toHaveLength(1);
+    expect(after[0].name).not.toBe(COARSE_INDEX_NAME);
+    expect(after[0].key.questionIndex).toBe(1);
+  });
+
+  test("without reconciliation the coarse index still blocks the second question", async () => {
+    await restorePreFixIndexes();
+    await ReviewQueue.collection.createIndex(
+      { ...COARSE_INDEX, questionIndex: 1 },
+      { unique: true, partialFilterExpression: { status: "open" } },
+    );
+
+    const attemptId = oid();
+    await enqueue(attemptId, [mistake({ topic: "General", questionIndex: 1 })]);
+    // Two identical-filter upserts would race here; the coarse index is what makes
+    // the second one fail outright rather than create the row.
+    await expect(
+      ReviewQueue.collection.insertOne({
+        user,
+        itemType: "failed_question",
+        topic: "General",
+        title: "Fix misconception: General",
+        status: "open",
+        source: { quiz, attempt: attemptId, flashcardSet: null, flashcardId: null },
+        metadata: { questionIndex: 4 },
+      })
+    ).rejects.toMatchObject({ code: 11000 });
+
+    // Leaving the collection reconciled so later assertions are not affected.
+    await ReviewQueue.syncIndexes();
   });
 
   test("items without an attempt are still deduplicated by topic", async () => {

@@ -58,6 +58,19 @@ const reviewQueueSchema = new mongoose.Schema(
       flashcardSet: { type: mongoose.Schema.Types.ObjectId, ref: "FlashcardSet", default: null },
       flashcardId: { type: mongoose.Schema.Types.ObjectId, default: null },
     },
+    // Which question of the attempt this item came from, for `failed_question`
+    // items. Part of the item's identity rather than a detail of `metadata`: a
+    // learner can miss two questions that share a topic, and before this existed
+    // those two collapsed into a single row, so one diagnosis was silently lost
+    // while the UI still labelled the surviving card with a specific `Q{n}`.
+    //
+    // Deliberately nullable and never defaulted to 0. Only `failed_question`
+    // carries it, so topic and flashcard items must index and match as "absent";
+    // a 0 default would make them collide on a fabricated question 0.
+    questionIndex: {
+      type: Number,
+      default: null,
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -76,6 +89,12 @@ reviewQueueSchema.index(
     "source.attempt": 1,
     "source.flashcardSet": 1,
     "source.flashcardId": 1,
+    // Matches the application-level filter in reviewQueueService.js. Changing this
+    // key spec changes the index NAME, and Mongoose's automatic index build only
+    // ever creates indexes -- it never drops the superseded one. A deployment that
+    // does not run `npm run indexes:sync` therefore keeps the old coarse unique
+    // index in force and keeps rejecting the very insert this change permits.
+    questionIndex: 1,
   },
   {
     unique: true,
