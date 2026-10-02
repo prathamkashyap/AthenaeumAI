@@ -9,7 +9,7 @@ this file — do not carry a number forward on trust.
 | Layer | Command | Files | Tests | Result |
 |---|---|---:|---:|---|
 | Backend unit | `cd backend && npm run test:unit` | 35 | 929 | 929 passed |
-| Backend integration | `cd backend && npm run test:integration` | 9 | 114 | 101 passed, 13 skipped |
+| Backend integration | `cd backend && npm run test:integration` | 9 | 114 | 101 passed, 13 skipped locally; 108 / 6 in CI |
 | Frontend | `npm test` | 17 | 209 | 209 passed |
 | Playwright E2E | `npm run test:e2e` | 2 | 28 | 26 passed, 2 skipped |
 
@@ -77,6 +77,17 @@ Needs a real MongoDB. Redis only for the BullMQ suite.
 
 The 13 skips are capability probes, not failures. They assert that a deployment which cannot run
 multi-document transactions skips the transaction-dependent path rather than pretending to pass.
+
+The same 114 tests therefore yield a **different split** depending on the deployment, and both
+figures are correct:
+
+| Deployment | Result |
+|---|---|
+| Local, standalone `mongod` | 101 passed, 13 skipped |
+| CI, single-node replica set with `ENABLE_JOB_QUEUE=true` | 108 passed, 6 skipped |
+
+CI provisions a replica set and enables the queue, which activates 7 of the 13 gated tests. The
+counts are verified against CI run `37042895598`.
 
 ## Frontend — 17 files, 209 tests
 
