@@ -83,7 +83,10 @@ describe("the provider seam", () => {
     await generateQuizFromAI(CONTENT, "Hard", 2);
 
     const request = provider.complete.mock.calls[0][0];
-    expect(request.model).toBe("llama-3.3-70b-versatile");
+    // No model is pinned here: selecting one is the provider seam's job, via
+    // GROQ_MODEL or its own default. Hard-coding it at a call site is what let a
+    // provider-side model retirement break every AI feature at once.
+    expect(request.model).toBeUndefined();
     expect(request.temperature).toBe(0.2); // Hard is pinned tighter than the profile
     expect(request.maxTokens).toBe(2048);
     expect(request.messages[0].role).toBe("system");
@@ -568,7 +571,10 @@ describe("generateTutorResponseFromAI", () => {
     await generateTutorResponseFromAI(tutorArgs);
 
     const request = provider.complete.mock.calls[0][0];
-    expect(request.model).toBe("llama-3.3-70b-versatile");
+    // No model is pinned here: selecting one is the provider seam's job, via
+    // GROQ_MODEL or its own default. Hard-coding it at a call site is what let a
+    // provider-side model retirement break every AI feature at once.
+    expect(request.model).toBeUndefined();
     expect(request.temperature).toBe(0.2);
     expect(request.maxTokens).toBe(2500);
     expect(request.messages[0].role).toBe("system");

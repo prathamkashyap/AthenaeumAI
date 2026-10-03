@@ -51,7 +51,6 @@ Text: ${context.chunkText}`
   )).join("\n\n");
 
   const stream = await getAIProvider().stream({
-    model: "llama-3.3-70b-versatile",
     messages: [
       {
         role: "system",

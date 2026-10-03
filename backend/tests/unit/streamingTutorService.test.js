@@ -55,7 +55,10 @@ describe("streamTutorResponse", () => {
     await streamTutorResponse(ARGS);
 
     const request = provider.stream.mock.calls[0][0];
-    expect(request.model).toBe("llama-3.3-70b-versatile");
+    // No model is pinned here: selecting one is the provider seam's job, via
+    // GROQ_MODEL or its own default. Hard-coding it at a call site is what let a
+    // provider-side model retirement break every AI feature at once.
+    expect(request.model).toBeUndefined();
     expect(request.temperature).toBe(0.2);
     expect(request.maxTokens).toBe(2500);
     expect(request.messages[0].role).toBe("system");

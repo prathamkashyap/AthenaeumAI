@@ -8,7 +8,11 @@
 
 import Groq from "groq-sdk";
 
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+// Resolved from the environment so a provider-side model retirement is a config
+// change rather than a code change. The previous hard-coded default,
+// `llama-3.3-70b-versatile`, was retired by Groq and returned 404
+// `model_not_found` on every AI feature.
+const DEFAULT_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
 let groqClient = null;
 

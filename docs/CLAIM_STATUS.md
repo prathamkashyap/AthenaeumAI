@@ -61,6 +61,11 @@ rather than `$set`.
   `backend/services/groqProvider.js` is the only module that imports `groq-sdk`. Nine unit suites
   inject `backend/tests/mocks/mockAIProvider.js` through it, so AI code is exercised with no
   credential and no network.
+- **Configurable model.** The model is selected once, in the provider, from `GROQ_MODEL` and
+  otherwise defaults to `openai/gpt-oss-120b`. No service names a model: `aiQuizService` and
+  `streamingTutorService` pass no `model` at all, so a provider-side retirement is a configuration
+  change rather than a code change. An explicit `model` argument still takes precedence over
+  `GROQ_MODEL`, and all three behaviours are asserted in `groqProvider.test.js`.
 
 **Not implemented.** No distributed tracing, no dead-letter queue with manual replay tooling, no
 metrics export. Jobs are retried and retained as failed records; there is no admin surface for
@@ -135,13 +140,23 @@ Recorded so they are not discovered in production.
    snoozes failed questions, which take the `$max`/`$min` path and are unaffected. Exposed only if
    topic snoozing is shipped.
 
-3. **No latency budget** is enforced for retrieval or for background jobs.
+3. **Every model currently reachable on the configured Groq key is a reasoning model**, so each
+   one spends part of its token budget reasoning before answering. Measured end to end through the
+   real endpoint, a five-question quiz takes **132s** on `openai/gpt-oss-120b`, 188s on
+   `openai/gpt-oss-20b` and 244s on `qwen/qwen3.8-27b`. The tutor is unaffected in practice
+   (4.7s). The previous default, `llama-3.3-70b-versatile`, was non-reasoning and has been retired
+   by Groq, so there is no fast option currently available on this account. This is the largest
+   open product problem and is the first item on the roadmap.
+4. **The AI model was hard-coded until this branch.** `llama-3.3-70b-versatile` appeared in five
+   call sites and failed every AI feature with 404 `model_not_found` when Groq retired it. Model
+   selection now lives in the provider and is overridable by `GROQ_MODEL`; the services assert they
+   pin no model, so the same failure cannot recur silently.
 
-4. **`recommendationService.js` has no direct test** — 0 of 15 functions covered.
+5. **`recommendationService.js` has no direct test** — 0 of 15 functions covered.
 
-5. **Lint is not a CI gate.** It is clean locally; nothing stops it regressing.
+6. **Lint is not a CI gate.** It is clean locally; nothing stops it regressing.
 
-6. **The tutor chat flow has no browser-level spec.** Component suites cover the UI and the
+7. **The tutor chat flow has no browser-level spec.** Component suites cover the UI and the
    refusal contract, but a grounded answer against real indexed material is verified by the
    post-deployment smoke test.
 
