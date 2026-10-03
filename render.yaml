@@ -3,9 +3,12 @@
 # Reviewable in Git rather than living only in a dashboard. Apply with
 # "New > Blueprint" in Render, pointing at this file.
 #
-# NO SECRET VALUES BELONG IN THIS FILE. Every credential is declared `sync: false`,
-# which tells Render to prompt for the value at apply time and keep it out of Git.
-# Values are never read from this repository.
+# `services` is a LIST, per Render's Blueprint specification: every entry begins
+# with `- type:`.
+#
+# NO SECRET VALUES BELONG IN THIS FILE. Every credential is declared `sync: false`
+# (Render prompts for it at apply time) or `generateValue: true`. Values are never
+# read from this repository.
 #
 # ── Required before the first apply ────────────────────────────────────────────
 #
@@ -24,16 +27,26 @@
 
 services:
   # ── Redis / Valkey backing the BullMQ queue ──────────────────────────────────
-  key-value:
-    type: keyvalue
+  # Key Value plan IDs are `free`, `256mb`, `1g`, … — not the general-purpose
+  # `starter` used by web services.
+  #
+  # `maxmemoryPolicy: noeviction` matters here. The default is `allkeys-lru`,
+  # which lets Redis evict queued jobs when memory fills, silently dropping
+  # background work. A job queue must fail loudly at the memory ceiling instead.
+  #
+  # A `free` instance gets `persistenceMode: off`, so queued jobs do not survive a
+  # restart. Acceptable for a single-instance deployment; move to a paid plan with
+  # persistence if that ever matters.
+  - type: keyvalue
     name: athenaeum-redis
-    plan: starter
-    region: oregon
-    ipAllowList: [] # private networking only; nothing reaches it from the internet
+    plan: free
+    maxmemoryPolicy: noeviction
+    # Required for Key Value. Empty means internal-only: nothing reaches Redis
+    # from the public internet.
+    ipAllowList: []
 
   # ── Express API ──────────────────────────────────────────────────────────────
-  api:
-    type: web
+  - type: web
     name: athenaeum-api
     runtime: node
     plan: starter
@@ -43,7 +56,7 @@ services:
     # Not `npm run dev`: that is nodemon. `start` is plain `node server.js`.
     startCommand: npm start
     healthCheckPath: /api/v1/health/ready
-    autoDeploy: false
+    autoDeployTrigger: 'off'
     envVars:
       - key: NODE_ENV
         value: production
@@ -65,6 +78,7 @@ services:
       # NODE_ENV=test.
       - key: ENABLE_JOB_QUEUE
         value: "true"
+      # Key Value exposes a `redis://` URL over the private network.
       - key: REDIS_URL
         fromService:
           type: keyvalue
@@ -79,8 +93,7 @@ services:
   # Separate from the API because quiz generation, material indexing and attempt
   # sync are long-running: a five-question quiz takes roughly two minutes on the
   # current reasoning model, which must not occupy an HTTP request.
-  worker:
-    type: worker
+  - type: worker
     name: athenaeum-worker
     runtime: node
     plan: starter
@@ -88,7 +101,7 @@ services:
     rootDir: backend
     buildCommand: npm ci
     startCommand: node worker.js
-    autoDeploy: false
+    autoDeployTrigger: 'off'
     envVars:
       - key: NODE_ENV
         value: production
@@ -107,14 +120,17 @@ services:
           property: connectionString
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
-  # A static site, not a web service: the bundle is served as files.
-  frontend:
-    type: static
+  # A static SITE is `type: web` with `runtime: static` — there is no
+  # `type: static`. The bundle is served as files from a CDN.
+  #
+  # No `plan` (static sites have no compute plan), no `region` (global CDN), and
+  # no `startCommand` (unsupported); `staticPublishPath` takes its place.
+  - type: web
     name: athenaeum-frontend
     runtime: static
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
-    autoDeploy: false
+    autoDeployTrigger: 'off'
     envVars:
       # Baked into the bundle at build time. The production build throws if this
       # is unset rather than silently addressing localhost.
