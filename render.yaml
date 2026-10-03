@@ -6,6 +6,20 @@
 # `services` is a LIST, per Render's Blueprint specification: every entry begins
 # with `- type:`.
 #
+# ── $0 infrastructure ────────────────────────────────────────────────────────
+#
+# Every service here is on a Free plan, so no payment method is required:
+#
+#   frontend  static site   free
+#   api       web service   free   (0.1 CPU / 512 MB) — runs the API AND the worker
+#   redis     key value     free   (25 MB, in-memory only)
+#   mongo     Atlas M0      free   (yours, not declared here)
+#   AI        Groq free tier
+#
+# Render offers no free compute for a Background Worker, which is why the worker
+# shares the API process. See docs/DEPLOYMENT.md for what Free costs in behaviour:
+# the service spins down after 15 minutes idle and takes ~1 minute to wake.
+#
 # NO SECRET VALUES BELONG IN THIS FILE. Every credential is declared `sync: false`
 # (Render prompts for it at apply time) or `generateValue: true`. Values are never
 # read from this repository.
@@ -45,16 +59,20 @@ services:
     # from the public internet.
     ipAllowList: []
 
-  # ── Express API ──────────────────────────────────────────────────────────────
+  # ── Express API + BullMQ worker, one free web service ───────────────────────
+  # Render has no free compute plan for a Background Worker, so the consumer runs
+  # in this process via `node main.js`. Job semantics are unchanged: work is still
+  # enqueued, tracked in MongoDB, retried, and run by a real BullMQ worker.
   - type: web
     name: athenaeum-api
     runtime: node
-    plan: starter
+    # Free: 0.1 CPU / 512 MB. No payment method required.
+    plan: free
     region: oregon
     rootDir: backend
     buildCommand: npm ci
-    # Not `npm run dev`: that is nodemon. `start` is plain `node server.js`.
-    startCommand: npm start
+    # `npm start` is the API alone; `start:combined` adds the worker.
+    startCommand: npm run start:combined
     healthCheckPath: /api/v1/health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -88,36 +106,6 @@ services:
       # localhost fallback.
       - key: ALLOWED_ORIGINS
         sync: false
-
-  # ── BullMQ worker ────────────────────────────────────────────────────────────
-  # Separate from the API because quiz generation, material indexing and attempt
-  # sync are long-running: a five-question quiz takes roughly two minutes on the
-  # current reasoning model, which must not occupy an HTTP request.
-  - type: worker
-    name: athenaeum-worker
-    runtime: node
-    plan: starter
-    region: oregon
-    rootDir: backend
-    buildCommand: npm ci
-    startCommand: node worker.js
-    autoDeployTrigger: 'off'
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: MONGODB_URI
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GROQ_MODEL
-        sync: false
-      - key: ENABLE_JOB_QUEUE
-        value: "true"
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: athenaeum-redis
-          property: connectionString
 
   # ── Frontend ─────────────────────────────────────────────────────────────────
   # A static SITE is `type: web` with `runtime: static` — there is no

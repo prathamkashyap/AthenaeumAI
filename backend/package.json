@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "start:combined": "node main.js",
     "dev": "nodemon server.js",
     "build": "node --check server.js && node --check worker.js",
     "seed:demo": "node scripts/seedDemo.js",

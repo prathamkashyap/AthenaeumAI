@@ -266,8 +266,23 @@ export const runJobWithStatusTracking = async (job, { process = processBackgroun
   }
 };
 
-export const startWorker = async () => {
-  await connectDB();
+/**
+ * Starts the BullMQ worker and returns a handle for stopping it.
+ *
+ * Deliberately does NOT register process signal handlers. When the worker runs as
+ * its own process (`node worker.js`, as Compose and the standalone Render worker
+ * do) the entry point below owns shutdown. When it shares a process with the API
+ * (`node main.js`) that entry point owns shutdown for both, so a single signal
+ * has a single owner and cannot race two `process.exit` paths.
+ *
+ * @param connectDatabase Set false when the caller has already connected, as
+ *   `main.js` does. Left true for the standalone entry point.
+ * @returns {Promise<{ close: () => Promise<void> }>}
+ */
+export const startWorker = async ({ connectDatabase = true } = {}) => {
+  if (connectDatabase) {
+    await connectDB();
+  }
   logger.info("🚀 Worker connected to MongoDB");
 
   const redisConnection = createRedisConnection();
@@ -291,26 +306,41 @@ export const startWorker = async () => {
     logger.warn(`[JobWorker] Stalled job ${jobId}`);
   });
 
-  // Graceful shutdown
-  const gracefulShutdown = async (signal) => {
-    logger.info(`Received ${signal}, closing worker gracefully...`);
+  // Stops the worker without touching process signals or exiting. The caller
+  // decides what happens next, so the API and the worker can be torn down in a
+  // deliberate order by one owner.
+  const close = async () => {
     await worker.close();
     await queueEvents.close();
     await redisConnection.quit();
-    await mongoose.connection.close();
-    process.exit(0);
   };
 
-  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  return { close };
 };
 
 const isMainModule = process.argv[1] &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
-  startWorker().catch((err) => {
-    logger.error("Failed to start worker", { error: err.message, stack: err.stack });
-    process.exit(1);
-  });
+  startWorker()
+    .then(({ close }) => {
+      // Standalone worker process: this entry point owns shutdown.
+      const shutdown = async (signal) => {
+        logger.info(`Received ${signal}, closing worker gracefully...`);
+        try {
+          await close();
+          await mongoose.connection.close();
+          process.exit(0);
+        } catch (err) {
+          logger.error("Error during worker shutdown:", { error: err.message });
+          process.exit(1);
+        }
+      };
+      process.on("SIGINT", () => shutdown("SIGINT"));
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+    })
+    .catch((err) => {
+      logger.error("Failed to start worker", { error: err.message, stack: err.stack });
+      process.exit(1);
+    });
 }
