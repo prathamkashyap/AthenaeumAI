@@ -1,5 +1,5 @@
 import { Worker, QueueEvents } from "bullmq";
-import Redis from "ioredis";
+import { createRedisClient } from "./utils/redisConnection.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
@@ -25,11 +25,7 @@ dotenv.config();
 const QUEUE_NAME = "athenaeum-background-jobs";
 
 const createRedisConnection = () => {
-  const redisConnection = new Redis({
-    host: process.env.REDIS_HOST || "localhost",
-    port: parseInt(process.env.REDIS_PORT) || 6379,
-    maxRetriesPerRequest: null,
-  });
+  const redisConnection = createRedisClient({ maxRetriesPerRequest: null });
 
   redisConnection.on("error", (error) => {
     logger.warn("[JobWorker] Redis connection error.", { error: error.message });
