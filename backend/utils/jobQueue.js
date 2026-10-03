@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import Redis from "ioredis";
+import { createRedisClient } from "./redisConnection.js";
 import logger from "./logger.js";
 import { QueueEnqueueError } from "./errors.js";
 import {
@@ -21,18 +21,11 @@ const DEFAULT_JOB_OPTIONS = Object.freeze({
   removeOnFail: { count: 500, age: 30 * 24 * 60 * 60 },
 });
 
-// `REDIS_URL` is what managed Redis/Valkey providers hand out, and both ioredis
-// and BullMQ accept a connection string directly. `REDIS_HOST`/`REDIS_PORT` are
-// kept for local development and Compose, which address Redis by host and port.
+// Connection resolution lives in one place so the queue, the worker and the
+// health probe cannot disagree about where Redis is.
 const redisConnection = isQueueDisabled
   ? null
-  : process.env.REDIS_URL
-    ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
-    : new Redis({
-        host: process.env.REDIS_HOST || "localhost",
-        port: parseInt(process.env.REDIS_PORT) || 6379,
-        maxRetriesPerRequest: null,
-      });
+  : createRedisClient({ maxRetriesPerRequest: null });
 
 redisConnection?.on("error", (error) => {
   logger.warn("[JobQueue] Redis connection error.", { error: error.message });

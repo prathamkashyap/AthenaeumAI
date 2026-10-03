@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
-import Redis from "ioredis";
+import { createRedisClient } from "../utils/redisConnection.js";
 import { backgroundQueue } from "../utils/jobQueue.js";
 import {
   TRANSACTION_SUPPORT,
@@ -25,9 +25,7 @@ router.get("/", async (req, res) => {
   let redisStatus = "disconnected";
   let redisClient;
   try {
-    redisClient = new Redis({
-      host: process.env.REDIS_HOST || "localhost",
-      port: parseInt(process.env.REDIS_PORT) || 6379,
+    redisClient = createRedisClient({
       maxRetriesPerRequest: 1,
       connectTimeout: 1000,
       lazyConnect: true,
