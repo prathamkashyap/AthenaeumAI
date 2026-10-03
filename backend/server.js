@@ -222,29 +222,51 @@ app.use(globalErrorHandler);
 
 // ─── Server Start ─────────────────────────────────────────────────────────────
 
-const PORT   = env.PORT;
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-});
-
-const gracefulShutdown = async (signal) => {
-  logger.info(`${signal} received. Starting graceful shutdown...`);
-  server.close(async () => {
-    logger.info("HTTP server closed. Draining database connections...");
-    try {
-      await mongoose.connection.close();
-      logger.info("Database connections closed. Shutdown complete.");
-      process.exit(0);
-    } catch (err) {
-      logger.error("Error during shutdown:", { error: err.message });
-      process.exit(1);
-    }
+/**
+ * Starts the HTTP listener and returns a handle for stopping it.
+ *
+ * Like `startWorker`, this does not register process signal handlers or exit.
+ * When the API runs alone (`node server.js`, as Compose and local development do)
+ * the entry point below owns shutdown. When it shares a process with the worker
+ * (`node main.js`) that entry point owns shutdown for both, so one signal cannot
+ * race two `process.exit` paths.
+ *
+ * @returns {Promise<{ close: (cb: () => void) => void }>}
+ */
+export const startServer = () =>
+  new Promise((resolve) => {
+    const PORT = env.PORT;
+    const server = app.listen(PORT, () => {
+      logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+      resolve({ server, close: (cb) => server.close(cb) });
+    });
   });
-  setTimeout(() => {
-    logger.error("Graceful shutdown timed out. Forcing exit.");
-    process.exit(1);
-  }, 10000);
-};
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
+const isMainModule = process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isMainModule) {
+  const { close } = await startServer();
+
+  const gracefulShutdown = (signal) => {
+    logger.info(`${signal} received. Starting graceful shutdown...`);
+    close(async () => {
+      logger.info("HTTP server closed. Draining database connections...");
+      try {
+        await mongoose.connection.close();
+        logger.info("Database connections closed. Shutdown complete.");
+        process.exit(0);
+      } catch (err) {
+        logger.error("Error during shutdown:", { error: err.message });
+        process.exit(1);
+      }
+    });
+    setTimeout(() => {
+      logger.error("Graceful shutdown timed out. Forcing exit.");
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
+}

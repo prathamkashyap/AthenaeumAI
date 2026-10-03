@@ -43,20 +43,45 @@ VITE_API_ROOT="https://api.example.com/api/v1" npm run build   # → dist/
 
 ## Production topology
 
+Everything runs on Free plans, so **no payment method is required**.
+
 ```
-athenaeumai.tech          Render static site   (the Vite bundle in dist/)
+athenaeumai.tech          Render static site   FREE   (the Vite bundle in dist/)
         │
         │  VITE_API_ROOT, baked in at build time
         ▼
-api.athenaeumai.tech      Render web service   (Express, node server.js)
-        │
-        ├── MONGODB_URI ──► MongoDB Atlas      (replica set — transactions required)
-        ├── REDIS_URL ────► Render Key Value   (Valkey, BullMQ)
-        └── GROQ_API_KEY ─► Groq
-                                    │
-                       athenaeum-worker  Render background worker (node worker.js)
-                          consumes the same queue
+api.athenaeumai.tech      Render web service   FREE   (0.1 CPU / 512 MB)
+        │                      node main.js — Express AND the BullMQ worker
+        ├── MONGODB_URI ──► MongoDB Atlas M0   FREE   (replica set — transactions required)
+        ├── REDIS_URL ────► Render Key Value   FREE   (25 MB, in-memory only)
+        └── GROQ_API_KEY ─► Groq free tier
 ```
+
+### Why the worker shares the API process
+
+Render publishes no Free compute plan for a Background Worker, so a $0 deployment cannot host the
+consumer separately. `backend/main.js` starts both in one process instead:
+
+```
+node main.js
+  ├── connectDB()        idempotent — see config/database.js
+  ├── startWorker()      BullMQ consumer, concurrency 5
+  └── startServer()      Express listener
+```
+
+Job semantics are unchanged. Work is still enqueued, still recorded in MongoDB, still retried with
+backoff, and still executed by a real BullMQ worker — only the hosting process differs. Folding the
+work into request handlers was rejected: it would make a multi-minute quiz generation occupy an HTTP
+request, lose the durable job record, and remove retry and terminal-state behaviour.
+
+`startServer()` and `startWorker()` deliberately register **no** process signal handlers, so
+SIGTERM has a single owner: drain the worker, close HTTP, close the database, exit, with a 30s
+ceiling. `node server.js` and `node worker.js` still work standalone and still own their own
+shutdown — Compose, local development and the Playwright E2E suite use those.
+
+Verified on a production-shaped single container: one process (`ps` shows a single
+`node main.js`), API ready, and a real `INDEX_MATERIAL` job enqueued by the API was picked up by the
+in-process worker 19 ms later and completed, indexing 5 chunks.
 
 ## Environment variables
 
@@ -79,11 +104,6 @@ api.athenaeumai.tech      Render web service   (Express, node server.js)
 | `ENABLE_JOB_QUEUE` | yes | `true`. The queue is only auto-disabled under `NODE_ENV=test`. |
 | `REDIS_URL` | **yes** | Connection string from Render Key Value. `REDIS_HOST`/`REDIS_PORT` also work and are what Compose uses. |
 | `ALLOWED_ORIGINS` | **yes** | Comma-separated frontend origins. In production this is the *only* allow-list — there is no localhost fallback. |
-
-### Worker — runtime
-
-`NODE_ENV`, `MONGODB_URI`, `GROQ_API_KEY`, `GROQ_MODEL`, `ENABLE_JOB_QUEUE`, `REDIS_URL`. No
-`JWT_SECRET` and no `ALLOWED_ORIGINS`: the worker serves no HTTP and issues no tokens.
 
 No secret value belongs in `render.yaml`. Each is declared `sync: false`, which makes Render prompt
 for it at apply time.
@@ -124,14 +144,32 @@ builds from source instead.
 | Service | Build | Start |
 |---|---|---|
 | `frontend` | `npm ci && npm run build` | static, publishes `./dist` |
-| `api` | `cd backend && npm ci` | `npm start` → `node server.js` |
-| `worker` | `cd backend && npm ci` | `node worker.js` |
+| `api` | `cd backend && npm ci` | `npm run start:combined` → `node main.js` |
 
 Health check: `GET /api/v1/health/ready`. It reports readiness from a real capability probe, so a
 deployment that cannot reach MongoDB or cannot run transactions will not pass it.
 
 The SPA rewrite in the blueprint matters: `/tutor`, `/review` and `/assessments/:id/result` are
 client-side routes with no file behind them, and must resolve to `index.html`.
+
+## What the Free tier costs you
+
+Free is genuinely $0 with no payment method, and Render suspends rather than bills if you would
+incur charges. But it is explicitly documented as being for testing and hobby projects, not
+production. These are the behaviours that follow, all of them accepted deliberately:
+
+| Limitation | Effect here |
+|---|---|
+| **Spins down after 15 min idle** | The service sleeps and takes ~1 min to wake on the next request. A visitor arriving after a quiet period sees a loading page first. |
+| **750 instance hours/month per workspace** | Enough for a demo. Once exhausted, all Free web services are suspended until the month resets. |
+| **0.1 CPU / 512 MB** | Comfortable for this workload — the AI calls are network-bound, not CPU-bound. |
+| **Ephemeral filesystem** | Uploaded PDFs under `uploads/` do not survive. Nothing depends on that: the extracted text and chunks live in MongoDB. Logs are unaffected now that they go to stdout. |
+| **Key Value is in-memory (25 MB)** | Queue contents are lost if the instance restarts, so an in-flight job can be dropped. `maxmemoryPolicy: noeviction` stops Redis silently evicting queued jobs at the memory ceiling. Retention caps (`removeOnComplete`/`removeOnFail`, 500 each) keep usage bounded. |
+| **Service-initiated traffic threshold** | Render may suspend a Free service that generates unusually high outbound traffic — and it names *external database access* and *external API calls* explicitly, which is exactly Atlas and Groq. Fine at demo volume; a busy deployment would not be. |
+| **No one-off jobs, no shell, no persistent disk** | Migrations run as a command, not a Render job. |
+
+No uptime-pinging workaround is attempted: keeping the service awake to dodge the spin-down would
+defeat the purpose and burn the instance hours.
 
 ## Known production limitation
 
@@ -156,4 +194,5 @@ Run against the live domain, not a local build:
 - [ ] Tutor returns a grounded answer with citations
 - [ ] Tutor refuses when the learner has no material, without calling the model
 - [ ] `GET /api/v1/health/ready` reports ready
-- [ ] The worker process is running and consuming the queue
+- [ ] The worker is running **inside the API process** — startup log shows `Combined API + worker process ready.`
+- [ ] Logs appear in Render's dashboard (the app logs to stdout, not just to a file)
