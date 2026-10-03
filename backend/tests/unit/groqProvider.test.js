@@ -30,9 +30,14 @@ const sdkResponse = (content, usage = { prompt_tokens: 11, completion_tokens: 22
 });
 
 let originalKey;
+let originalModel;
 
 beforeEach(async () => {
   originalKey = process.env.GROQ_API_KEY;
+  originalModel = process.env.GROQ_MODEL;
+  // Pinned so the default-model assertions below are not at the mercy of the
+  // environment the suite happens to run in.
+  delete process.env.GROQ_MODEL;
   process.env.GROQ_API_KEY = "test-key-not-real";
   chatCompletionsCreate.mockReset();
   groqConstructor.mockClear();
@@ -43,6 +48,8 @@ beforeEach(async () => {
 afterEach(() => {
   if (originalKey === undefined) delete process.env.GROQ_API_KEY;
   else process.env.GROQ_API_KEY = originalKey;
+  if (originalModel === undefined) delete process.env.GROQ_MODEL;
+  else process.env.GROQ_MODEL = originalModel;
 });
 
 describe("createGroqProvider", () => {
@@ -80,7 +87,34 @@ describe("createGroqProvider", () => {
 
     await createGroqProvider().complete({ messages: MESSAGES });
 
-    expect(chatCompletionsCreate.mock.calls[0][0].model).toBe("llama-3.3-70b-versatile");
+    // A provider-side model retirement must never again require a code change to
+    // the services that call this adapter, so the default is asserted here rather
+    // than at any call site.
+    expect(chatCompletionsCreate.mock.calls[0][0].model).toBe("openai/gpt-oss-120b");
+  });
+
+  test("honours GROQ_MODEL from the environment", async () => {
+    // The module reads the variable when it is first evaluated, so it has to be
+    // set before the re-import.
+    process.env.GROQ_MODEL = "vendor/some-other-model";
+    jest.resetModules();
+    ({ createGroqProvider } = await import("../../services/groqProvider.js"));
+    chatCompletionsCreate.mockResolvedValue(sdkResponse("ok"));
+
+    await createGroqProvider().complete({ messages: MESSAGES });
+
+    expect(chatCompletionsCreate.mock.calls[0][0].model).toBe("vendor/some-other-model");
+  });
+
+  test("an explicit model still wins over GROQ_MODEL", async () => {
+    process.env.GROQ_MODEL = "vendor/some-other-model";
+    jest.resetModules();
+    ({ createGroqProvider } = await import("../../services/groqProvider.js"));
+    chatCompletionsCreate.mockResolvedValue(sdkResponse("ok"));
+
+    await createGroqProvider().complete({ messages: MESSAGES, model: "caller/model" });
+
+    expect(chatCompletionsCreate.mock.calls[0][0].model).toBe("caller/model");
   });
 
   test("leaves content undefined when the response carries no message", async () => {

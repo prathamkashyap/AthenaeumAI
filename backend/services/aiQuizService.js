@@ -295,7 +295,6 @@ export const generateQuizFromAI = async (
     for (const chunk of selectedChunks) {
       try {
         const { content: raw } = await complete({
-          model: "llama-3.3-70b-versatile",
           messages: [
             {
               role: "system",
@@ -350,7 +349,6 @@ export const generateFlashcardsFromAI = async (text, count = 12) => {
   if (!text || text.trim().length < 80) return [];
 
   const { content } = await complete({
-    model: "llama-3.3-70b-versatile",
     messages: [
       {
         role: "system",
@@ -406,7 +404,6 @@ export const generateMistakeAnalysesFromAI = async ({ quizTitle, difficulty, mis
   if (!mistakes?.length) return [];
 
   const { content } = await complete({
-    model: "llama-3.3-70b-versatile",
     messages: [
       {
         role: "system",
@@ -486,7 +483,6 @@ Text: ${context.chunkText}`
   )).join("\n\n");
 
   const { content } = await complete({
-    model: "llama-3.3-70b-versatile",
     messages: [
       {
         role: "system",
