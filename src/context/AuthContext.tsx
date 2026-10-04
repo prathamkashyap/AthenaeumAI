@@ -5,6 +5,18 @@ interface User {
   id: string;
   name: string;
   email: string;
+  /**
+   * Achievements the backend has actually awarded. Optional because a stored
+   * user from an older session will not carry it, and because a response from a
+   * deployment predating the field simply omits it — both must read as "none
+   * earned" rather than breaking.
+   */
+  achievements?: Array<{
+    id: string;
+    title: string;
+    description?: string;
+    unlockedAt?: string;
+  }>;
   profile?: {
     program?: string;
     semester?: string;
