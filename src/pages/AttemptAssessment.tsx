@@ -385,8 +385,9 @@ const AttemptAssessment = () => {
                 <span className="text-foreground">{questions.length}</span> questions.
               </p>
               {answeredCount < questions.length && (
-                <p className="text-xs text-amber-400 mb-4">
-                  ⚠ {questions.length - answeredCount} question(s) left unanswered will be marked wrong.
+                <p className="text-xs text-amber-400 mb-4 flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  {questions.length - answeredCount} question(s) left unanswered will be marked wrong.
                 </p>
               )}
               <div className="flex gap-3 mt-6">
