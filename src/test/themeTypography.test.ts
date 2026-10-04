@@ -42,27 +42,50 @@ describe("only two themes ship", () => {
     expect(goldTokens ?? []).toEqual([]);
   });
 
+  // These definitions moved out of ThemeToggle into src/lib/theme.ts so that
+  // main.tsx can apply the stored theme at boot. Without that move the public
+  // landing page and auth screen ignored the preference entirely, because the
+  // toggle is only mounted inside the authenticated AppLayout. The assertions
+  // follow the definitions rather than the component that renders the button.
   it("the toggle offers exactly two modes", () => {
-    const toggle = read("src/components/ThemeToggle.tsx");
+    const theme = read("src/lib/theme.ts");
 
-    expect(toggle).toContain('type Theme = "starry" | "light";');
-    expect(toggle).toContain('const ORDER: Theme[] = ["starry", "light"];');
-    expect(toggle).not.toContain('"academia"]');
+    expect(theme).toContain('type Theme = "starry" | "light";');
+    expect(theme).toContain('THEME_ORDER: Theme[] = ["starry", "light"];');
+    expect(theme).not.toContain('"academia"]');
   });
 
   it("a stale stored theme resolves to a real one", () => {
-    const toggle = read("src/components/ThemeToggle.tsx");
+    const theme = read("src/lib/theme.ts");
 
     // Persistence outlives the code that wrote it, so the read path must normalise.
-    expect(toggle).toContain("const normalise");
-    expect(toggle).toMatch(/normalise\(localStorage\.getItem\(KEY\)\)/);
+    expect(theme).toContain("export function normaliseTheme");
+    expect(theme).toMatch(/normaliseTheme\(raw\)/);
   });
 
   it("still clears a stale theme-academia class from the DOM", () => {
-    const toggle = read("src/components/ThemeToggle.tsx");
+    const theme = read("src/lib/theme.ts");
 
     // Defensive: a cached page may still carry the class until it is applied.
-    expect(toggle).toContain('root.classList.remove("theme-light", "theme-academia")');
+    expect(theme).toContain('root.classList.remove(LIGHT_CLASS, "theme-academia")');
+  });
+
+  it("keeps exactly one definition of the theme, shared by boot and toggle", () => {
+    const toggle = read("src/components/ThemeToggle.tsx");
+    const boot = read("src/main.tsx");
+
+    // The toggle must not redeclare the key, the order or the normalisation.
+    expect(toggle).not.toContain('athenaeum-theme');
+    expect(toggle).not.toMatch(/const ORDER/);
+    expect(toggle).not.toMatch(/classList/);
+    // ...and boot must go through the shared module, not a private copy.
+    expect(boot).toContain('from "./lib/theme"');
+    expect(boot).toContain("initTheme()");
+    // Applied before render, not in an effect, so there is no default-theme flash.
+    // Match the calls, not the identifiers: both names also appear in the imports
+    // at the top of the file, where `createRoot` sorts first.
+    expect(boot.indexOf("initTheme();")).toBeGreaterThan(-1);
+    expect(boot.indexOf("initTheme();")).toBeLessThan(boot.indexOf("createRoot(document"));
   });
 });
 

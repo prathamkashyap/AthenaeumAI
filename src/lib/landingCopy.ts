@@ -128,7 +128,7 @@ export const STACK: StackItem[] = [
 export const PROOF = {
   backendUnit: 942,
   backendIntegration: 101,
-  frontend: 357,
+  frontend: 374,
   endToEnd: 26,
 };
 
