@@ -15,6 +15,85 @@
 
 ---
 
+## Live
+
+| | |
+| :--- | :--- |
+| **Application** | [https://athenaeumai.tech](https://athenaeumai.tech) |
+| **API health** | [`/api/v1/health`](https://api.athenaeumai.tech/api/v1/health) |
+| **API docs (Swagger)** | [https://api.athenaeumai.tech/api-docs/](https://api.athenaeumai.tech/api-docs/) |
+
+Deployed on free tiers only — static frontend, one Node process serving the API and draining its
+own BullMQ queue, managed Redis, and MongoDB Atlas M0. The live deployment is verified against the
+real domain, not only in tests.
+
+---
+
+## Screenshots
+
+All screenshots below are the deployed production application, captured from `athenaeumai.tech`.
+
+**Landing — Aurora (default) and Light**
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/landing-desktop-aurora.png" alt="Landing page in the Aurora theme" /></td>
+<td width="50%"><img src="docs/assets/screenshots/landing-desktop-light.png" alt="Landing page in the Light theme" /></td>
+</tr>
+<tr>
+<td align="center"><em>Aurora</em></td>
+<td align="center"><em>Light</em></td>
+</tr>
+</table>
+
+**Analytics — mastery derived from real attempts**
+
+<img src="docs/assets/screenshots/analytics-desktop.png" alt="Analytics showing readiness, retention, weakest topic, and a recommended next action" />
+
+**Today's Review — scheduled from what was actually missed**
+
+<img src="docs/assets/screenshots/review-desktop.png" alt="Today's Review showing weak topics and a queued failed question" />
+
+**Tutor — grounded in the uploaded material, with citations**
+
+<img src="docs/assets/screenshots/tutor-desktop.png" alt="Tutor answering with Sources Used citations" />
+
+<details>
+<summary>More screenshots</summary>
+
+**Landing — mobile**
+
+<img src="docs/assets/screenshots/landing-mobile.png" alt="Landing page on a mobile viewport" />
+
+**Dashboard**
+
+<img src="docs/assets/screenshots/dashboard-desktop.png" alt="Authenticated dashboard" />
+
+**Auth — Light and Aurora**
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/auth-desktop-light.png" alt="Sign in page in the Light theme" /></td>
+<td width="50%"><img src="docs/assets/screenshots/auth-desktop-aurora.png" alt="Sign in page in the Aurora theme" /></td>
+</tr>
+</table>
+
+</details>
+
+### The loop, demonstrated
+
+The screenshots above are not staged data. They come from one real production run, and the chain
+between them is the product:
+
+**attempt (4 of 5) → weakest topic (Database Indexing, 18% against 73% elsewhere) → review queue
+item (the failed question, with its correction) → grounded tutor answer citing the uploaded
+material.**
+
+A learner who scores 80% is not told they are ready. The system reports the one topic they failed,
+queues it, and points the next action at it.
+
+---
+
 ## What AthenaeumAI does
 
 Most quiz generators are stateless — they produce questions and forget.
@@ -150,7 +229,7 @@ The provider is resolved per call. The model is `process.env.GROQ_MODEL || "open
 | Category | Feature | Description |
 | :--- | :--- | :--- |
 | **PDF processing** | Material ingest | Extracts text, chunks at 1800 chars with 260 overlap, indexes for lexical retrieval |
-| **Quiz generation** | Grounded generation | Questions written from uploaded text, with explanations and per-question topics |
+| **Quiz generation** | Grounded generation | Questions written from uploaded text, with explanations and per-question topics; low-quality items (invalid answer index, duplicate options, thin explanation) are filtered out, near-duplicates removed, survivors ranked |
 | **Attempts** | Durable recording | Attempts persisted before effects are applied, with an idempotent claim |
 | **Mastery** | Per-topic state | Mastery, confidence and exponentially decayed retention computed from real attempts |
 | **Spaced repetition** | SM-2 flashcards | Ease-factor scheduling with interval progression |
@@ -267,7 +346,7 @@ In production an empty `ALLOWED_ORIGINS` allows no browser origin at all.
 
 ## Testing
 
-Measured on `main` (`9bc6029`). Every figure below is from an actual run.
+Measured on `main` (`b4b1bfc`), which is the deployed build. Every figure below is from an actual run.
 
 ```bash
 # Frontend unit tests (Vitest) — 374 tests across 29 files
@@ -338,7 +417,7 @@ Generation is synchronous and makes up to three sequential provider calls (first
 ### Shipped
 
 - [x] PDF upload, parsing and lexical indexing
-- [x] Grounded quiz generation with quality filtering
+- [x] Grounded quiz generation with quality filtering, near-duplicate removal and ranking
 - [x] Per-topic mastery, confidence and exponential decay from real attempts
 - [x] SM-2 spaced-repetition flashcards
 - [x] Review queue ranked by weakness, with attempt-scoped snooze
