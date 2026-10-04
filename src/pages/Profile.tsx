@@ -16,6 +16,15 @@ const Profile = () => {
   const [semester, setSemester] = useState(user?.profile?.semester || "");
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Achievements awarded by the backend, newest first. Defaults to an empty list
+   * so a response without the field renders the empty state rather than claiming
+   * achievements that were never earned.
+   */
+  const achievements = [...(user?.achievements ?? [])].sort(
+    (a, b) => new Date(b.unlockedAt ?? 0).getTime() - new Date(a.unlockedAt ?? 0).getTime(),
+  );
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -113,26 +122,52 @@ const Profile = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4 pt-2">
-                  <div className="flex items-start gap-4">
+                {achievements.length === 0 ? (
+                  /* Truthful empty state. It used to render two hard-coded
+                     achievements here, so a brand-new account was told it had
+                     completed a quiz and held a 3-day streak while the streak
+                     figures directly above read 0. Only what the backend has
+                     actually awarded is listed now. */
+                  <div className="flex items-start gap-4 pt-2">
                     <div className="bg-primary/10 p-2 rounded-full">
-                      <Clock className="h-4 w-4 text-primary" />
+                      <Award className="h-4 w-4 text-primary" />
                     </div>
                     <div>
-                      <p className="font-medium text-sm">First Quiz Completed</p>
-                      <p className="text-xs text-muted-foreground">You completed your first diagnostic assessment.</p>
+                      <p className="font-medium text-sm">No achievements yet</p>
+                      <p className="text-xs text-muted-foreground">
+                        Complete your first assessment to unlock your first achievement. Study on
+                        three consecutive days to unlock a streak milestone.
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4">
-                    <div className="bg-primary/10 p-2 rounded-full">
-                      <Flame className="h-4 w-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">3 Day Streak</p>
-                      <p className="text-xs text-muted-foreground">You studied for 3 consecutive days.</p>
-                    </div>
+                ) : (
+                  <div className="space-y-4 pt-2">
+                    {achievements.map((achievement) => (
+                      <div key={achievement.id} className="flex items-start gap-4">
+                        <div className="bg-primary/10 p-2 rounded-full">
+                          {achievement.id.startsWith("streak_") ? (
+                            <Flame className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Clock className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{achievement.title}</p>
+                          {achievement.description && (
+                            <p className="text-xs text-muted-foreground">
+                              {achievement.description}
+                            </p>
+                          )}
+                          {achievement.unlockedAt && (
+                            <p className="text-[11px] text-muted-foreground/70 mt-0.5 font-mono">
+                              {new Date(achievement.unlockedAt).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

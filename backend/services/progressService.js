@@ -54,6 +54,39 @@ export const normalizeTopic = (topic) => {
   return canonicalNormalize(topic);
 };
 
+/** Consecutive-day counts that earn a streak achievement. */
+const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
+
+/**
+ * Loads the learner's progress document, or null when none exists yet.
+ *
+ * A brand-new learner who has studied for three days but never sat an assessment
+ * has no progress document, so there is nothing to attach an achievement to. That
+ * is a legitimate state, not an error.
+ */
+const loadProgress = async (userId, session) => {
+  const progress = await withSession(UserProgress.findOne({ user: userId }), session);
+  return progress ?? null;
+};
+
+/**
+ * Attaches an achievement to a progress document, at most once.
+ *
+ * Idempotent by id, so replaying the same attempt or re-running the same day
+ * cannot produce a duplicate. Returns whether this call was the one that awarded
+ * it, so the caller can fire a notification only on the transition.
+ */
+const awardAchievement = async (progress, achievement, { session } = {}) => {
+  if (!progress) return false;
+
+  const existing = progress.achievements ?? [];
+  if (existing.some((a) => a.id === achievement.id)) return false;
+
+  progress.achievements = [...existing, achievement];
+  await saveDoc(progress, session);
+  return true;
+};
+
 export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt, session }) => {
   const progress = await UserProgress.findOneAndUpdate(
     { user: userId },
@@ -120,19 +153,21 @@ export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt, ses
 
   // Check achievements
   if (progress.totals.quizzesTaken === 1) {
-    const hasFirstQuiz = progress.achievements?.some(a => a.id === "first_quiz");
-    if (!hasFirstQuiz) {
-      if (!progress.achievements) progress.achievements = [];
-      progress.achievements.push({
+    const awarded = await awardAchievement(
+      progress,
+      {
         id: "first_quiz",
         title: "First Steps",
         description: "Completed your first assessment.",
         unlockedAt: now,
-      });
+      },
+      { session }
+    );
+    if (awarded) {
       await Notification.create(
         [{
           user: userId,
-          title: "Achievement Unlocked! 🏆",
+          title: "Achievement unlocked",
           message: "You've earned the 'First Steps' achievement.",
           type: "achievement"
         }],
@@ -165,12 +200,27 @@ export const updateStudyStreak = async (userId, { session } = {}) => {
 
   await saveDoc(user, session);
 
-  // Streak Notifications
-  if (current > 1 && [3, 7, 14, 30, 50, 100].includes(current)) {
+  // Streak milestones: notify, and persist the milestone as a real achievement.
+  //
+  // The Profile page lists achievements, so a milestone that only ever produced a
+  // notification was invisible there — the section could never show a streak. The
+  // notification is unchanged in substance; the achievement is the addition.
+  if (current > 1 && STREAK_MILESTONES.includes(current)) {
+    const awarded = await awardAchievement(
+      await loadProgress(userId, session),
+      {
+        id: `streak_${current}`,
+        title: `${current} Day Streak`,
+        description: `Studied for ${current} consecutive days.`,
+        unlockedAt: new Date(),
+      },
+      { session }
+    );
+
     await Notification.create(
       [{
         user: userId,
-        title: `${current} Day Streak! 🔥`,
+        title: `${current} day streak`,
         message: `You've studied for ${current} consecutive days. Keep it up!`,
         type: "success"
       }],

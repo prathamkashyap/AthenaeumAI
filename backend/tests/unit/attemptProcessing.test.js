@@ -1421,7 +1421,92 @@ describe("updateStudyStreak", () => {
       await updateStudyStreak(USER_ID);
     }
     expect(store.users.get(USER_ID).streak.current).toBe(3);
-    expect(store.notifications.map((n) => n.title)).toContain("3 Day Streak! 🔥");
+    expect(store.notifications.map((n) => n.title)).toContain("3 day streak");
+  });
+
+  // ── Achievements the Profile page lists ───────────────────────────────────
+  //
+  // The Profile page once rendered two hard-coded achievement cards, so a
+  // brand-new account was shown "First Quiz Completed" and "3 Day Streak" while
+  // its streak read 0. These pin the persisted truth the page now renders.
+
+  test("a learner with no progress document earns no streak achievement", async () => {
+    // No progress document at all: studied, but never sat an assessment.
+    store.progress.delete(USER_ID);
+
+    jest.setSystemTime(new Date("2026-04-28T09:00:00.000Z"));
+    await updateStudyStreak(USER_ID);
+    jest.setSystemTime(new Date("2026-04-29T09:00:00.000Z"));
+    await updateStudyStreak(USER_ID);
+    jest.setSystemTime(new Date("2026-04-30T09:00:00.000Z"));
+    await updateStudyStreak(USER_ID);
+
+    // The streak itself is still tracked on the user.
+    expect(store.users.get(USER_ID).streak.current).toBe(3);
+    // ...but there is nothing to attach an achievement to, and no crash.
+    expect(store.progress.has(USER_ID)).toBe(false);
+  });
+
+  test("a milestone streak persists a streak achievement", async () => {
+    store.progress.set(USER_ID, newProgress(USER_ID));
+
+    for (const day of ["2026-04-28", "2026-04-29", "2026-04-30"]) {
+      jest.setSystemTime(new Date(`${day}T09:00:00.000Z`));
+      await updateStudyStreak(USER_ID);
+    }
+
+    const progress = store.progress.get(USER_ID);
+    const streakAchievement = progress.achievements.find((a) => a.id === "streak_3");
+
+    expect(streakAchievement).toBeDefined();
+    expect(streakAchievement.title).toBe("3 Day Streak");
+    expect(streakAchievement.description).toBe("Studied for 3 consecutive days.");
+    expect(streakAchievement.unlockedAt).toBeInstanceOf(Date);
+  });
+
+  test("no streak achievement before the milestone", async () => {
+    store.progress.set(USER_ID, newProgress(USER_ID));
+
+    for (const day of ["2026-04-28", "2026-04-29"]) {
+      jest.setSystemTime(new Date(`${day}T09:00:00.000Z`));
+      await updateStudyStreak(USER_ID);
+    }
+
+    expect(store.users.get(USER_ID).streak.current).toBe(2);
+    expect(store.progress.get(USER_ID).achievements).toEqual([]);
+  });
+
+  test("reprocessing the milestone does not duplicate the achievement", async () => {
+    store.progress.set(USER_ID, newProgress(USER_ID));
+
+    for (const day of ["2026-04-28", "2026-04-29", "2026-04-30"]) {
+      jest.setSystemTime(new Date(`${day}T09:00:00.000Z`));
+      await updateStudyStreak(USER_ID);
+    }
+
+    const afterFirst = store.progress.get(USER_ID).achievements.map((a) => a.id);
+    expect(afterFirst).toContain("streak_3");
+
+    // Same day again, and then a replayed earlier day: neither may re-award.
+    jest.setSystemTime(new Date("2026-04-30T18:00:00.000Z"));
+    await updateStudyStreak(USER_ID);
+    jest.setSystemTime(new Date("2026-04-30T21:00:00.000Z"));
+    await updateStudyStreak(USER_ID);
+
+    expect(store.progress.get(USER_ID).achievements.map((a) => a.id)).toEqual(afterFirst);
+  });
+
+  test("a four-day streak does not re-award the three-day achievement", async () => {
+    store.progress.set(USER_ID, newProgress(USER_ID));
+
+    for (const day of ["2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01"]) {
+      jest.setSystemTime(new Date(`${day}T09:00:00.000Z`));
+      await updateStudyStreak(USER_ID);
+    }
+
+    // 4 is not a milestone, so only the earlier 3-day award stands.
+    expect(store.users.get(USER_ID).streak.current).toBe(4);
+    expect(store.progress.get(USER_ID).achievements.map((a) => a.id)).toEqual(["streak_3"]);
   });
 
   test("does not reset a multi-day streak when called twice on the same day", async () => {

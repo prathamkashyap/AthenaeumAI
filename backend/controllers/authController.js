@@ -27,6 +27,30 @@ const getMeta = (req) => ({
 
 // ─── Auth Response Helper ─────────────────────────────────────────────────────
 
+/**
+ * The user shape the client receives, including earned achievements.
+ *
+ * Achievements are stored on the progress document rather than the user, so they
+ * are read here instead of in each handler. This is additive: every field
+ * `toSafeJSON()` already returned is passed through untouched, so no existing
+ * client behaviour changes.
+ *
+ * A learner with no progress document yet has genuinely earned nothing, so an
+ * empty list is the truthful answer rather than an error.
+ */
+const userWithAchievements = async (user) => {
+  const base = user.toSafeJSON();
+
+  if (!isDBConnected()) return { ...base, achievements: [] };
+
+  const progress = await UserProgress.findOne({ user: user._id })
+    .select("achievements")
+    .lean()
+    .catch(() => null);
+
+  return { ...base, achievements: progress?.achievements ?? [] };
+};
+
 const sendAuthResponse = async (res, user, req) => {
   const accessToken   = createToken(user);
   const family        = uuidv4();
@@ -35,7 +59,7 @@ const sendAuthResponse = async (res, user, req) => {
   res.cookie("refreshToken", refreshToken, REFRESH_COOKIE_OPTIONS);
 
   res.json({
-    user:  user.toSafeJSON(),
+    user:  await userWithAchievements(user),
     token: accessToken,
   });
 };
@@ -95,7 +119,7 @@ export const login = async (req, res) => {
 };
 
 export const me = async (req, res) => {
-  res.json({ user: req.user.toSafeJSON() });
+  res.json({ user: await userWithAchievements(req.user) });
 };
 
 /**
