@@ -14,6 +14,18 @@ export default {
       },
     },
     extend: {
+      // One shared header dimension.
+      //
+      // The sidebar brand header and the main topbar were each sized independently
+      // (h-16 = 64px against 76px expanded / 68px collapsed), so their bottom
+      // borders never lined up — and the sidebar's moved when the rail collapsed.
+      // Both now reference this single token, so they cannot drift apart again.
+      height: {
+        header: "var(--app-header-height)",
+      },
+      spacing: {
+        header: "var(--app-header-height)",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -59,6 +59,10 @@
     --shadow-glow: 0 0 40px hsl(210 90% 65% / 0.25);
     --shadow-card: 0 4px 24px -8px hsl(0 0% 0% / 0.6);
 
+  /* Shared application-chrome height, consumed by both the sidebar brand header
+     and the main topbar so their bottom borders form one continuous line. */
+  --app-header-height: 4rem;
+
     --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 
     /* sidebar */

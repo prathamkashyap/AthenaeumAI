@@ -1,7 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap, Bot, CalendarCheck } from "lucide-react";
+import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, GraduationCap, Bot, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { topicIdentity } from "@/lib/topicIdentity";
 import { cn } from "@/lib/utils";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -45,10 +46,18 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      {/* Collapsed, the header drops its own padding so the mark can centre in the
-          full 4rem rail instead of being inset twice. Expanded is untouched. */}
-      <SidebarHeader className={cn("border-b border-sidebar-border", collapsed && "p-0")}>
-        <div className={cn("flex items-center gap-2 py-3", collapsed ? "justify-center" : "px-2")}>
+      {/* Fixed to the same shared height as the main topbar, so the two bottom
+          borders form one continuous line. It used to size itself from its
+          contents — 76px expanded, 68px collapsed — which is why the divider sat
+          lower than the topbar's and shifted when the rail collapsed. Collapsing
+          now changes the header's contents, never its height. */}
+      <SidebarHeader
+        className={cn(
+          "h-header shrink-0 justify-center border-b border-sidebar-border",
+          collapsed ? "p-0" : "px-2",
+        )}
+      >
+        <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
           <div
             className={cn(
               "flex shrink-0 items-center justify-center rounded-lg bg-gradient-brand shadow-glow",
@@ -94,17 +103,31 @@ export function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {topics.map((t) => (
-                  <SidebarMenuItem key={t.title}>
-                    <SidebarMenuButton className="group justify-between">
-                      <div className="flex items-center gap-2">
-                        <ScrollText className="h-3.5 w-3.5 text-muted-foreground group-hover:text-accent" />
-                        <span className="text-sm">{t.title}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-muted-foreground">{t.count}%</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {topics.map((t) => {
+                  const { Icon, accent, chip } = topicIdentity(t.title);
+                  return (
+                    <SidebarMenuItem key={t.title}>
+                      {/* Fixed icon / flexible title / fixed count. `min-w-0` on the
+                          middle column is what lets the title ellipsis instead of
+                          pushing the percentage onto a second line. */}
+                      <SidebarMenuButton
+                        className="group gap-2.5"
+                        title={t.title}
+                        aria-label={`${t.title}, ${t.count}% mastery`}
+                      >
+                        <span
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${chip} ${accent}`}
+                        >
+                          <Icon className="h-3 w-3" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+                        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                          {t.count}%
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
