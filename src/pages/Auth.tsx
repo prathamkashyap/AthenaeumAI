@@ -1,23 +1,35 @@
 import { AuroraBackground } from "@/components/AuroraBackground";
+import { BrandLockup } from "@/components/BrandLockup";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
-import { AlertCircle, GraduationCap, Loader2, Sparkles } from "lucide-react";
+import { AlertCircle, Loader2, Sparkles } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 const Auth = () => {
-  const { isAuthenticated, login, signup } = useAuth();
+  const { isAuthenticated, isLoading, login, signup } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState("login");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/";
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || "/dashboard";
+
+  // ProtectedRoute waits for `isLoading` before deciding; Auth did not, so a hard
+  // refresh with a stored token painted the whole login form for a frame before
+  // redirecting. Mirroring the same guard removes that flash.
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-accent" />
+      </div>
+    );
+  }
 
   if (isAuthenticated) return <Navigate to={from} replace />;
 
@@ -55,15 +67,7 @@ const Auth = () => {
       <AuroraBackground />
       <div className="relative z-10 min-h-screen grid lg:grid-cols-[1fr_440px]">
         <section className="hidden lg:flex flex-col justify-between p-12">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center shadow-glow">
-              <GraduationCap className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <p className="font-serif text-2xl leading-none">AthenaeumAI</p>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground mt-1">Intelligent Learning OS</p>
-            </div>
-          </div>
+          <BrandLockup size="lg" />
 
           <div className="max-w-3xl space-y-6">
             <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-accent">
@@ -85,15 +89,7 @@ const Auth = () => {
 
         <section className="flex items-center justify-center p-6">
           <Card className="glass-panel border-transparent w-full max-w-md p-8">
-            <div className="mb-6 lg:hidden flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center">
-                <GraduationCap className="h-5 w-5 text-accent" />
-              </div>
-              <div>
-                <p className="font-serif text-xl">AthenaeumAI</p>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Learning OS</p>
-              </div>
-            </div>
+            <BrandLockup size="md" className="mb-6 lg:hidden" />
 
             <Tabs value={mode} onValueChange={setMode}>
               <TabsList className="grid w-full grid-cols-2 mb-6">
@@ -116,7 +112,7 @@ const Auth = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
-                    <Input id="name" name="name" placeholder="Pratham Kashyap" required={mode === "signup"} />
+                    <Input id="name" name="name" placeholder="Ada Lovelace" required={mode === "signup"} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">

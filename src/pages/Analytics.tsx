@@ -153,7 +153,7 @@ const Analytics = () => {
                 <div>
                   <h2 className="font-serif text-2xl">Your mastery map is waiting for signal</h2>
                   <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-                    Complete an assessment and AthenaeumAI will compute accuracy trends, weak topics, topic mastery, and adaptive revision recommendations from real attempts.
+                    Complete an assessment and Athenaeum AI will compute accuracy trends, weak topics, topic mastery, and adaptive revision recommendations from real attempts.
                   </p>
                 </div>
               </Card>

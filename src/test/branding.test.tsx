@@ -100,28 +100,36 @@ describe("subject and feature cards use Lucide icons, not emoji", () => {
 
 describe("the brand mark is the blue Athenaeum treatment", () => {
   /**
-   * Asserted against the sidebar and auth sources rather than their rendered DOM:
-   * `AppSidebar` sits inside Radix sheet/tooltip context that jsdom does not
-   * provide, so mounting it here would test the harness, not the branding. These
-   * blocks are static, so reading them is a faithful check that every brand
-   * surface uses the same mark.
+   * Asserted against source rather than rendered DOM: `AppSidebar` sits inside
+   * Radix sheet/tooltip context that jsdom does not provide, so mounting it here
+   * would test the harness, not the branding.
+   *
+   * The mark itself moved into `BrandLockup`, which is the point of that
+   * component — there is now one implementation to check instead of three, and
+   * these tests were rewritten to assert that single source rather than the
+   * copies that used to be duplicated across the sidebar and auth screen.
    */
-  it("the sidebar renders the graduation-cap mark on the brand gradient tile", async () => {
-    const sidebar = await readRepoFile("src/components/AppSidebar.tsx");
+  it("one component renders the graduation-cap mark on the brand gradient tile", async () => {
+    const lockup = await readRepoFile("src/components/BrandLockup.tsx");
 
-    expect(sidebar).toContain("bg-gradient-brand");
-    // Matched loosely: the icon className is composed with `cn` and varies between
-    // the collapsed and expanded tile sizes, so assert the mark and its colour
-    // treatment rather than one exact string.
-    expect(sidebar).toMatch(/<GraduationCap[\s\S]{0,120}text-primary-foreground/);
+    expect(lockup).toContain("bg-gradient-brand");
+    // Matched loosely: the glyph size varies by `size`, so assert the mark and
+    // its colour treatment rather than one exact string.
+    expect(lockup).toMatch(/<GraduationCap/);
+    expect(lockup).toContain("text-primary-foreground");
   });
 
-  it("the auth page uses the same mark at both breakpoints", async () => {
+  it("the sidebar and the auth screen both render that one component", async () => {
+    const sidebar = await readRepoFile("src/components/AppSidebar.tsx");
     const auth = await readRepoFile("src/pages/Auth.tsx");
 
-    // Desktop hero and the mobile header, so neither drifts.
-    expect(auth.match(/<GraduationCap/g)?.length).toBe(2);
-    expect(auth).toContain("bg-accent/15");
+    // Neither re-implements the mark any more, which is what let the three
+    // copies drift apart in the first place.
+    expect(sidebar).not.toContain("<GraduationCap");
+    expect(auth).not.toContain("<GraduationCap");
+    expect(sidebar).toContain("<BrandLockup");
+    // Desktop hero and the mobile header, so neither breakpoint drifts.
+    expect(auth.match(/<BrandLockup/g)?.length).toBe(2);
   });
 
   it("the favicon is that same mark, not an emoji", async () => {

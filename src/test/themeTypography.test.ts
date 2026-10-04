@@ -106,7 +106,7 @@ describe("no hardcoded gold remains in component styling", () => {
     const offenders: string[] = [];
 
     for (const file of [
-      "src/pages/Index.tsx",
+      "src/pages/Dashboard.tsx",
       "src/pages/CreateAssessment.tsx",
       "src/pages/ResultAssessment.tsx",
       "src/pages/AttemptAssessment.tsx",

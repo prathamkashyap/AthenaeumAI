@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/AppLayout";
+import { BRAND } from "@/components/BrandLockup";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -257,7 +258,7 @@ const Index = () => {
           <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
             <div className="space-y-3 max-w-2xl">
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-accent">
-                <Sparkles className="h-3.5 w-3.5" /> Intelligent Learning System
+                <Sparkles className="h-3.5 w-3.5" /> {BRAND.tagline}
               </div>
 
               {/* Greeting in Inter, given name in Instrument Serif. The display

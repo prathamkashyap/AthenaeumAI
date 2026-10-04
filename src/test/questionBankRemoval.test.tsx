@@ -75,7 +75,7 @@ const mockPagePath = resolve(process.cwd(), "src/pages/Quiz.tsx");
 const visit = async (path: string) => {
   window.history.pushState({}, "", path);
   render(<App />);
-  return screen.findByText(/page not found/i);
+  return screen.findByText(/does not exist/i);
 };
 
 beforeEach(() => {
@@ -103,7 +103,7 @@ describe("the fabricated Question Bank surface", () => {
     // The assessment page is lazy and needs the provider stack, so the assertion
     // is that it does not fall through to NotFound.
     await vi.waitFor(() => {
-      expect(screen.queryByText(/page not found/i)).toBeNull();
+      expect(screen.queryByText(/does not exist/i)).toBeNull();
     });
   });
 

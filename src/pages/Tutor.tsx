@@ -371,7 +371,7 @@ const Tutor = () => {
                 </div>
                 <h2 className="font-serif text-2xl">Grounded tutoring starts with your library</h2>
                 <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                  Ask a concept question and AthenaeumAI will retrieve relevant chunks, connect weak topics, and produce a personalized explanation.
+                  Ask a concept question and Athenaeum AI will retrieve relevant chunks, connect weak topics, and produce a personalized explanation.
                 </p>
               </Card>
             )}
