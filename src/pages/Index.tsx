@@ -253,7 +253,7 @@ const Index = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <Button asChild size="lg" className="bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow">
+              <Button asChild size="lg" className="bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow">
                 <Link to="/assessments/create">Generate Quiz <ArrowUpRight className="ml-1 h-4 w-4" /></Link>
               </Button>
 
@@ -317,7 +317,7 @@ const Index = () => {
                   <button
                     key={s.subject}
                     onClick={() => handleSubjectClick(s)}
-                    className={`group relative p-5 rounded-xl border ${colors.border} ${colors.bg} text-left transition-all duration-300 hover:shadow-[0_0_30px_hsl(38_55%_58%/0.1)] hover:scale-[1.02] animate-fade-in-up`}
+                    className={`group relative p-5 rounded-xl border ${colors.border} ${colors.bg} text-left transition-all duration-300 hover:shadow-[0_0_30px_hsl(199_90%_60%/0.14)] hover:scale-[1.02] animate-fade-in-up`}
                     style={{ animationDelay: `${i * 50}ms` }}
                   >
                     <span className="text-2xl mb-3 block">{s.icon}</span>
@@ -466,7 +466,7 @@ const Index = () => {
 
               <Button
                 asChild
-                className="w-full bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow justify-start"
+                className="w-full bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow justify-start"
               >
                 <Link to="/assessments/create">
                   <ArrowUpRight className="h-4 w-4 mr-2" /> Upload PDF & Generate

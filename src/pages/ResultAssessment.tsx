@@ -349,7 +349,7 @@ const ResultAssessment = () => {
       <div className="px-6 lg:px-10 py-8 max-w-5xl mx-auto space-y-8 animate-fade-in">
         {/* Score Header */}
         <section className="relative overflow-hidden rounded-2xl border border-border bg-gradient-hero p-8 lg:p-10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,hsl(38_55%_58%/0.08),transparent_50%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,hsl(199_90%_60%/0.12),transparent_50%)]" />
           <div className="relative flex flex-col lg:flex-row items-center gap-8">
             {/* Animated Score Ring */}
             <div className="relative w-40 h-40 flex-shrink-0">

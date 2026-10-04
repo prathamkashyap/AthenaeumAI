@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 /* AthenaeumAI — Aurora Minimal + Subtle Accents (default)
-   Optional: .theme-academia class on <html> swaps to dark academia gold.
+   Two modes only: the default Blue Aurora dark theme, and .theme-light.
    All colors HSL.
 */
 
@@ -51,7 +51,8 @@
     --gradient-hero: linear-gradient(135deg, hsl(220 38% 5%) 0%, hsl(215 45% 9%) 45%, hsl(230 40% 6%) 100%);
     --gradient-card: linear-gradient(160deg, hsl(220 28% 6%) 0%, hsl(220 30% 3%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(210 90% 65%) 0%, hsl(220 80% 55%) 100%);
-    --gradient-gold: var(--gradient-accent); /* legacy alias so .gold-text still works */
+    --gradient-brand: var(--gradient-accent);
+    --gradient-gold: var(--gradient-accent); /* legacy alias: the "gold" gradient has always been blue */
     --gradient-vignette: radial-gradient(ellipse at top, hsl(215 60% 12% / 0.45) 0%, transparent 70%);
 
     --shadow-elegant: 0 20px 60px -20px hsl(0 0% 0% / 0.7);
@@ -69,43 +70,6 @@
     --sidebar-accent-foreground: 210 25% 95%;
     --sidebar-border: 215 25% 12%;
     --sidebar-ring: 210 90% 65%;
-  }
-
-  /* Optional: legacy Dark Academia gold theme — opt-in */
-  .theme-academia {
-    --background: 30 14% 7%;
-    --foreground: 38 30% 88%;
-    --card: 28 16% 10%;
-    --card-foreground: 38 30% 88%;
-    --popover: 28 18% 9%;
-    --popover-foreground: 38 30% 90%;
-    --primary: 36 45% 72%;
-    --primary-foreground: 28 30% 10%;
-    --secondary: 25 18% 14%;
-    --secondary-foreground: 38 30% 88%;
-    --muted: 28 12% 14%;
-    --muted-foreground: 36 14% 62%;
-    --accent: 38 55% 58%;
-    --accent-foreground: 28 30% 8%;
-    --destructive: 8 55% 48%;
-    --destructive-foreground: 38 30% 95%;
-    --border: 30 12% 18%;
-    --input: 30 12% 16%;
-    --ring: 38 55% 58%;
-    --gradient-hero: linear-gradient(135deg, hsl(28 18% 9%) 0%, hsl(22 25% 13%) 100%);
-    --gradient-card: linear-gradient(160deg, hsl(28 16% 11%) 0%, hsl(25 18% 8%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(38 55% 58%) 0%, hsl(34 50% 48%) 100%);
-    --gradient-gold: var(--gradient-accent);
-    --gradient-vignette: radial-gradient(ellipse at top, hsl(30 25% 14% / 0.6) 0%, transparent 70%);
-    --shadow-glow: 0 0 40px hsl(38 55% 58% / 0.18);
-    --sidebar-background: 28 18% 8%;
-    --sidebar-foreground: 38 25% 80%;
-    --sidebar-primary: 38 55% 58%;
-    --sidebar-primary-foreground: 28 30% 8%;
-    --sidebar-accent: 28 16% 13%;
-    --sidebar-accent-foreground: 38 30% 88%;
-    --sidebar-border: 30 12% 16%;
-    --sidebar-ring: 38 55% 58%;
   }
 
   /* Light mode — clean white with the same blue/cyan accent */
@@ -163,14 +127,29 @@
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "cv11";
   }
-  h1, h2, h3, h4, .font-serif {
+  /* Interface text stays Inter. Headings stay Inter too, because they carry
+     weight and tracking rather than personality — a serif on every h1..h4 made
+     dense pages (analytics, review) look like prose. Instrument Serif is
+     reserved for the opt-in `.font-serif` utility, which is applied by hand to
+     the few places that should read as display or editorial. */
+  h1, h2, h3, h4 {
     font-family: 'Inter', system-ui, sans-serif;
     letter-spacing: -0.02em;
+    text-wrap: balance;
   }
-  body, p, span, button, input, textarea {
+  body, p, span, button, input, textarea, label, td, th, li {
     font-family: 'Inter', system-ui, sans-serif;
   }
-  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  /* The one sanctioned serif. Instrument Serif ships with a single weight, so it
+     is paired with an optical size rather than a bold weight. */
+  .font-serif {
+    font-family: 'Instrument Serif', 'Iowan Old Style', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+  .font-serif-italic { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; }
+  /* Compact numeric and technical metadata only. */
+  .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
 }
 
 @layer components {

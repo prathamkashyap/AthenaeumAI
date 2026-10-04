@@ -40,7 +40,7 @@ const DIFFICULTIES = [
     color: "text-amber-400",
     border: "border-amber-500/30",
     bg: "bg-amber-500/10",
-    glow: "hover:shadow-[0_0_30px_hsl(38_60%_50%/0.15)]",
+    glow: "hover:shadow-[0_0_30px_hsl(199_90%_60%/0.16)]",
   },
   {
     value: "Hard",
@@ -320,7 +320,7 @@ const CreateAssessment = () => {
             onClick={handleGenerate}
             disabled={!file || isGenerating}
             size="lg"
-            className="w-full sm:w-auto bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow disabled:opacity-40 disabled:shadow-none transition-all duration-300 h-12 px-8 text-base"
+            className="w-full sm:w-auto bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow disabled:opacity-40 disabled:shadow-none transition-all duration-300 h-12 px-8 text-base"
           >
             {isGenerating ? (
               <>
@@ -338,7 +338,7 @@ const CreateAssessment = () => {
           {isGenerating && (
             <div className="mt-4 space-y-2 animate-fade-in">
               <div className="h-1.5 w-full max-w-md rounded-full bg-muted overflow-hidden">
-                <div className="h-full bg-gradient-gold rounded-full animate-shimmer" style={{ width: "60%", backgroundSize: "200% 100%" }} />
+                <div className="h-full bg-gradient-brand rounded-full animate-shimmer" style={{ width: "60%", backgroundSize: "200% 100%" }} />
               </div>
               <p className="text-xs text-muted-foreground">
                 This may take 10–20 seconds depending on document length

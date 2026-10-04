@@ -113,7 +113,7 @@ const Assessments = () => {
 
           <Button
             asChild
-            className="bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow h-11"
+            className="bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow h-11"
           >
             <Link to="/assessments/create">
               <Plus className="h-4 w-4 mr-2" /> New Assessment
@@ -183,7 +183,7 @@ const Assessments = () => {
             </p>
             <Button
               asChild
-              className="bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow"
+              className="bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow"
             >
               <Link to="/assessments/create">
                 <Plus className="h-4 w-4 mr-2" /> Create Your First Quiz

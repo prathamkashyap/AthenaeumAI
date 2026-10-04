@@ -106,10 +106,10 @@ describe("the brand mark is the blue Athenaeum treatment", () => {
    * blocks are static, so reading them is a faithful check that every brand
    * surface uses the same mark.
    */
-  it("the sidebar renders the graduation-cap mark on the gradient tile", async () => {
+  it("the sidebar renders the graduation-cap mark on the brand gradient tile", async () => {
     const sidebar = await readRepoFile("src/components/AppSidebar.tsx");
 
-    expect(sidebar).toContain("bg-gradient-gold");
+    expect(sidebar).toContain("bg-gradient-brand");
     // Matched loosely: the icon className is composed with `cn` and varies between
     // the collapsed and expanded tile sizes, so assert the mark and its colour
     // treatment rather than one exact string.

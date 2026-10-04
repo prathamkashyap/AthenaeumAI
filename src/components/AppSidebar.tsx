@@ -51,7 +51,7 @@ export function AppSidebar() {
         <div className={cn("flex items-center gap-2 py-3", collapsed ? "justify-center" : "px-2")}>
           <div
             className={cn(
-              "flex shrink-0 items-center justify-center rounded-lg bg-gradient-gold shadow-glow",
+              "flex shrink-0 items-center justify-center rounded-lg bg-gradient-brand shadow-glow",
               collapsed ? "h-11 w-11" : "h-9 w-9 rounded-md",
             )}
           >
