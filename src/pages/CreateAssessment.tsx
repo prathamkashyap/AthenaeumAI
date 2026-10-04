@@ -350,7 +350,7 @@ const CreateAssessment = () => {
         <div className="grid sm:grid-cols-3 gap-3 pt-4">
           {[
             { icon: "📄", title: "PDF Analysis", desc: "Text is extracted and analyzed for key concepts" },
-            { icon: "🧠", title: "AI Generation", desc: "Questions crafted using Llama 3 70B model" },
+            { icon: "🧠", title: "AI Generation", desc: "Questions crafted by Groq-powered AI" },
             { icon: "📝", title: "With Explanations", desc: "Each answer includes detailed reasoning" },
           ].map((info) => (
             <div key={info.title} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">

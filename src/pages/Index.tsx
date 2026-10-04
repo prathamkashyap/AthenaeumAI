@@ -507,7 +507,7 @@ const Index = () => {
             <div className="pt-4 border-t border-border">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5 text-accent" />
-                <span>Powered by Llama 3 70B via Groq</span>
+                <span>AI powered by Groq</span>
               </div>
             </div>
           </Card>
