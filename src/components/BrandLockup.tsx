@@ -25,19 +25,25 @@ const SIZES = {
     tile: "h-9 w-9 rounded-md",
     glyph: "h-5 w-5",
     wordmark: "text-lg",
-    tagline: "text-[10px] tracking-[0.2em]",
+    // 9px at 0.12em, not 10px at 0.2em. The canonical tagline is three words
+    // where the sidebar's old one-liner was two, and at the looser tracking it
+    // measured ~215px inside a rail with ~196px to give — so it wrapped onto a
+    // second line and broke the 64px header. Only a rendered browser showed it;
+    // every DOM test passed. `whitespace-nowrap` makes a future longer tagline
+    // truncate rather than wrap.
+    tagline: "whitespace-nowrap text-[9px] tracking-[0.12em]",
   },
   md: {
     tile: "h-10 w-10 rounded-lg",
     glyph: "h-5 w-5",
     wordmark: "text-xl",
-    tagline: "text-[10px] tracking-[0.2em]",
+    tagline: "whitespace-nowrap text-[10px] tracking-[0.16em]",
   },
   lg: {
     tile: "h-11 w-11 rounded-lg",
     glyph: "h-6 w-6",
     wordmark: "text-2xl",
-    tagline: "text-[10px] tracking-[0.25em]",
+    tagline: "whitespace-nowrap text-[10px] tracking-[0.2em]",
   },
 } as const;
 
@@ -49,10 +55,20 @@ export type BrandLockupProps = {
    * than showing nothing.
    */
   markOnly?: boolean;
+  /**
+   * Merged onto the tagline. Used by the landing header to drop the tagline on
+   * narrow viewports, where the lockup plus the primary CTA overflow the row.
+   */
+  taglineClassName?: string;
   className?: string;
 };
 
-export function BrandLockup({ size = "md", markOnly = false, className }: BrandLockupProps) {
+export function BrandLockup({
+  size = "md",
+  markOnly = false,
+  taglineClassName,
+  className,
+}: BrandLockupProps) {
   const s = SIZES[size];
 
   return (
@@ -73,7 +89,13 @@ export function BrandLockup({ size = "md", markOnly = false, className }: BrandL
           <span className={cn("font-serif leading-none text-foreground", s.wordmark)}>
             {BRAND.wordmark}
           </span>
-          <span className={cn("mt-1 uppercase leading-none text-muted-foreground", s.tagline)}>
+          <span
+            className={cn(
+              "mt-1 uppercase leading-none text-muted-foreground",
+              s.tagline,
+              taglineClassName,
+            )}
+          >
             {BRAND.tagline}
           </span>
         </div>
