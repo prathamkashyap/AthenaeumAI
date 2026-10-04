@@ -117,7 +117,7 @@ export const deleteFlashcardSet = async (req, res, next) => {
     const set = await FlashcardSet.findOneAndUpdate(
       { _id: setId, user: req.user._id, deletedAt: null },
       { deletedAt: new Date() },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!set) {

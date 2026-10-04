@@ -58,7 +58,7 @@ export const updateUserProgressFromAttempt = async ({ userId, quiz, attempt, ses
   const progress = await UserProgress.findOneAndUpdate(
     { user: userId },
     { $setOnInsert: { user: userId } },
-    session ? { upsert: true, new: true, session } : { upsert: true, new: true }
+    session ? { upsert: true, returnDocument: "after", session } : { upsert: true, returnDocument: "after" }
   );
 
   progress.totals.quizzesTaken += 1;

@@ -77,7 +77,7 @@ describeDb("QuizAttempt durable sync marker", () => {
     const claimed = await QuizAttempt.findOneAndUpdate(
       filter,
       { $set: { "sync.status": "processed", "sync.appliedAt": new Date() } },
-      { new: true },
+      { returnDocument: "after" },
     );
     expect(claimed.sync.status).toBe("processed");
     expect(claimed.sync.appliedAt).toBeInstanceOf(Date);
@@ -87,7 +87,7 @@ describeDb("QuizAttempt durable sync marker", () => {
     const second = await QuizAttempt.findOneAndUpdate(
       filter,
       { $set: { "sync.status": "processed", "sync.appliedAt": new Date() } },
-      { new: true },
+      { returnDocument: "after" },
     );
     expect(second).toBeNull();
 

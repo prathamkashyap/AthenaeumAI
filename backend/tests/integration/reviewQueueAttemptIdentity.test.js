@@ -562,7 +562,7 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
           },
           $setOnInsert: { createdAt: new Date() },
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: "after" }
       );
 
     await build();
@@ -898,7 +898,7 @@ describeDb("ReviewQueue open-item identity (real MongoDB)", () => {
           },
           $setOnInsert: { createdAt: new Date() },
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: "after" }
       );
 
     await build();

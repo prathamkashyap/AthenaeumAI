@@ -614,7 +614,7 @@ describe("applying one attempt once", () => {
     const quiz = store.quizzes.get(QUIZ_ID);
     await updateUserProgressFromAttempt({ userId: USER_ID, quiz, attempt });
     expect(userProgressFindOneAndUpdate).toHaveBeenCalledWith(
-      { user: USER_ID }, { $setOnInsert: { user: USER_ID } }, { upsert: true, new: true },
+      { user: USER_ID }, { $setOnInsert: { user: USER_ID } }, { upsert: true, returnDocument: "after" },
     );
     expect(userFindById).toHaveBeenCalledWith(USER_ID);
   });
@@ -1045,7 +1045,7 @@ describe("the durable attempt claim", () => {
     expect(quizAttemptFindOneAndUpdate).toHaveBeenCalledWith(
       { _id: "attempt-1", "sync.status": { $ne: "processed" } },
       { $set: { "sync.status": "processed", "sync.appliedAt": expect.any(Date) } },
-      expect.objectContaining({ new: true }),
+      expect.objectContaining({ returnDocument: "after" }),
     );
   });
 

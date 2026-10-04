@@ -44,7 +44,7 @@ export const updateMaterial = async (req, res) => {
   const material = await StudyMaterial.findOneAndUpdate(
     { _id: req.params.id, user: req.user._id },
     updates,
-    { new: true }
+    { returnDocument: "after" }
   ).select("-extractedText");
 
   if (!material) return res.status(404).json({ error: "Study material not found" });
@@ -57,7 +57,7 @@ export const deleteMaterial = async (req, res, next) => {
     const material = await StudyMaterial.findOneAndUpdate(
       { _id: materialId, user: req.user._id, deletedAt: null },
       { deletedAt: new Date() },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!material) {
