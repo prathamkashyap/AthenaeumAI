@@ -33,6 +33,20 @@ describe("collapsed sidebar rail", () => {
     expect(sidebar).not.toMatch(/const SIDEBAR_WIDTH_ICON = "3rem";/);
   });
 
+  it("the brand header and the main topbar share one height", () => {
+    // The header used to size itself from its contents — 76px expanded, 68px
+    // collapsed, against the topbar's fixed 64px — so their bottom borders never
+    // lined up and the sidebar's moved when the rail collapsed. Both now read the
+    // same token, which is the only thing that keeps them aligned.
+    const css = read("src/index.css");
+    const config = read("tailwind.config.ts");
+
+    expect(css).toContain("--app-header-height: 4rem");
+    expect(config).toContain('header: "var(--app-header-height)"');
+    expect(read("src/components/AppSidebar.tsx")).toContain("h-header");
+    expect(read("src/components/AppLayout.tsx")).toContain("h-header");
+  });
+
   it("leaves the expanded and mobile widths alone", () => {
     const sidebar = read("src/components/ui/sidebar.tsx");
 
@@ -52,13 +66,14 @@ describe("collapsed brand mark", () => {
   const appSidebar = () => read("src/components/AppSidebar.tsx");
 
   it("centres the brand block when collapsed", () => {
-    expect(appSidebar()).toContain('collapsed ? "justify-center" : "px-2"');
+    // Applied only in the collapsed state, as a conditional class.
+    expect(appSidebar()).toContain('collapsed && "justify-center"');
   });
 
   it("drops the header padding only when collapsed", () => {
-    expect(appSidebar()).toContain(
-      'cn("border-b border-sidebar-border", collapsed && "p-0")',
-    );
+    // Expanded keeps its own horizontal inset; collapsed goes edge to edge so the
+    // mark can centre in the full rail.
+    expect(appSidebar()).toContain('collapsed ? "p-0" : "px-2"');
   });
 
   it("uses a tile that fits the wider rail with equal gutters", () => {
