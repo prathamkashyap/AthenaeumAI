@@ -31,12 +31,17 @@ import { Link, Navigate } from "react-router-dom";
 
 const CAPABILITY_ICONS = { Library, Brain, BarChart3, CalendarCheck, Trophy, Layers } as const;
 
+/**
+ * The header carries short labels; the footer keeps the full wording. Measured at
+ * 768px the five-item nav plus the lockup and the CTA needed ~836px, so the row
+ * overflowed by 68px — `md:flex` was switching the nav on far too early.
+ */
 const NAV = [
-  { href: "#loop", label: "How it works" },
-  { href: "#capabilities", label: "Capabilities" },
-  { href: "#stack", label: "Under the hood" },
-  { href: "#boundary", label: "What it does not do" },
-  { href: "#faq", label: "FAQ" },
+  { href: "#loop", label: "How it works", long: "How it works" },
+  { href: "#capabilities", label: "Capabilities", long: "Capabilities" },
+  { href: "#stack", label: "Stack", long: "Under the hood" },
+  { href: "#boundary", label: "Limits", long: "What it does not do" },
+  { href: "#faq", label: "FAQ", long: "FAQ" },
 ];
 
 function SectionHeading({ eyebrow, title, lede }: { eyebrow: string; title: string; lede?: string }) {
@@ -80,17 +85,25 @@ const Landing = () => {
       <div className="relative z-10">
         {/* ---------------- header ---------------- */}
         <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-6">
-            <Link to="/" className="shrink-0" aria-label={`${BRAND.fullName} home`}>
-              <BrandLockup size="sm" />
+          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6">
+            {/* `min-w-0` so the lockup can yield space rather than push the CTA
+                off-screen if the brand strings ever get longer. */}
+            <Link
+              to="/"
+              className="min-w-0 shrink"
+              aria-label={`${BRAND.fullName} home`}
+            >
+              {/* The tagline is ~180px of the row and the least essential part of
+                  the lockup, so it is the first thing to go when space is tight. */}
+              <BrandLockup size="sm" taglineClassName="hidden lg:block" />
             </Link>
 
-            <nav aria-label="Primary" className="hidden items-center gap-7 md:flex">
+            <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex xl:gap-7">
               {NAV.map((item) => (
                 <a
                   key={item.href}
                   href={item.href}
-                  className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  className="whitespace-nowrap text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {item.label}
                 </a>
@@ -100,7 +113,7 @@ const Landing = () => {
             <Button asChild size="sm" className="shrink-0 bg-gradient-brand text-primary-foreground">
               <Link to="/auth">
                 Open workspace
-                <ArrowRight className="ml-2 h-4 w-4" />
+                <ArrowRight className="ml-2 hidden h-4 w-4 sm:block" />
               </Link>
             </Button>
           </div>
@@ -386,7 +399,7 @@ const Landing = () => {
                   href={item.href}
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  {item.label}
+                  {item.long}
                 </a>
               ))}
             </nav>
