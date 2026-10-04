@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
+  ListChecks,
 } from "lucide-react";
 
 const DIFFICULTIES = [
@@ -349,18 +350,21 @@ const CreateAssessment = () => {
         {/* Info Cards */}
         <div className="grid sm:grid-cols-3 gap-3 pt-4">
           {[
-            { icon: "📄", title: "PDF Analysis", desc: "Text is extracted and analyzed for key concepts" },
-            { icon: "🧠", title: "AI Generation", desc: "Questions crafted by Groq-powered AI" },
-            { icon: "📝", title: "With Explanations", desc: "Each answer includes detailed reasoning" },
-          ].map((info) => (
-            <div key={info.title} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
-              <span className="text-lg">{info.icon}</span>
-              <div>
-                <p className="text-xs font-medium text-foreground">{info.title}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{info.desc}</p>
+            { icon: FileText, title: "PDF Analysis", desc: "Text is extracted and analyzed for key concepts" },
+            { icon: Brain, title: "AI Generation", desc: "Questions crafted by Groq-powered AI" },
+            { icon: ListChecks, title: "With Explanations", desc: "Each answer includes detailed reasoning" },
+          ].map((info) => {
+            const Icon = info.icon;
+            return (
+              <div key={info.title} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border/50">
+                <Icon className="h-5 w-5 shrink-0 mt-0.5 text-accent" />
+                <div>
+                  <p className="text-xs font-medium text-foreground">{info.title}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{info.desc}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </AppLayout>

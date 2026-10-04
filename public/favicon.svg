@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="AthenaeumAI">
+  <!--
+    The browser-tab icon, built from the identity the app already uses rather than a
+    mark invented for this file: the accent gradient tile (135deg, hsl(210 90% 65%)
+    to hsl(220 80% 55%)) carrying the Lucide "graduation-cap" glyph in the primary
+    foreground colour, which is exactly how the sidebar and auth page render it.
+
+    Kept as a standalone SVG because index.html needs a static asset and the React
+    components that draw the same mark cannot run before the bundle loads.
+
+    Update the two stops below if the brand gradient changes in src/index.css.
+    Note: no double hyphens are allowed in an XML comment, hence the spelled-out
+    variable names above.
+  -->
+  <defs>
+    <linearGradient id="athenaeum" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#55A6F6" />
+      <stop offset="1" stop-color="#306EE8" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#athenaeum)" />
+  <g
+    transform="translate(4 4)"
+    fill="none"
+    stroke="#090D15"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z" />
+    <path d="M22 10v6" />
+    <path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5" />
+  </g>
+</svg>

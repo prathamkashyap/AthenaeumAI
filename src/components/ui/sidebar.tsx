@@ -16,7 +16,11 @@ const SIDEBAR_COOKIE_NAME = "sidebar:state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+// 4rem, not 3rem. At 3rem the header padding (p-2) and the brand row's own
+// horizontal padding left 16px of content for a 36px mark, so the logo was
+// squeezed against the rail edges. 64px gives a square app-icon tile room to
+// sit centred with equal gutters.
+const SIDEBAR_WIDTH_ICON = "4rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContext = {

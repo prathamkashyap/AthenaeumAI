@@ -42,7 +42,7 @@ export function ThemeToggle() {
       size="icon"
       onClick={cycle}
       aria-label={`Theme: ${labelFor(theme)} — click for ${nextLabel}`}
-      title={`Theme: ${labelFor(theme)} → ${nextLabel}`}
+      title={`Theme: ${labelFor(theme)} — click for ${nextLabel}`}
       className="text-muted-foreground hover:text-accent transition-colors"
     >
       <Icon className="h-4 w-4" />
