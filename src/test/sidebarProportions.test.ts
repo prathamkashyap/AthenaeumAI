@@ -77,17 +77,23 @@ describe("collapsed brand mark", () => {
   });
 
   it("uses a tile that fits the wider rail with equal gutters", () => {
-    const source = appSidebar();
+    // The tile geometry moved into BrandLockup's SIZES map when the three brand
+    // copies were consolidated, so the sizes are asserted where they now live.
+    const lockup = read("src/components/BrandLockup.tsx");
 
-    expect(source).toContain('collapsed ? "h-11 w-11" : "h-9 w-9 rounded-md"');
-    expect(source).toContain(
-      'collapsed ? "h-6 w-6" : "h-5 w-5"',
-    );
+    // lg is the collapsed rail size, sm the expanded one.
+    expect(lockup).toContain('lg: {');
+    expect(lockup).toContain('tile: "h-11 w-11 rounded-lg"');
+    expect(lockup).toContain('tile: "h-9 w-9 rounded-md"');
+    expect(lockup).toContain('glyph: "h-6 w-6"');
+    expect(lockup).toContain('glyph: "h-5 w-5"');
   });
 
   it("cannot be squeezed: the tile is shrink-0 inside a centred row", () => {
-    const source = appSidebar();
-    expect(source).toContain("flex shrink-0 items-center justify-center");
+    const lockup = read("src/components/BrandLockup.tsx");
+    expect(lockup).toContain("shrink-0 items-center justify-center");
+    // ...and the sidebar centres it in the collapsed state.
+    expect(appSidebar()).toContain('collapsed && "justify-center"');
   });
 
   it("still fits within the rail", () => {

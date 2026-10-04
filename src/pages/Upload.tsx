@@ -170,7 +170,7 @@ const UploadPage = () => {
             </div>
             <h3 className="font-serif text-2xl">No materials indexed yet</h3>
             <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-              Generate an assessment from a PDF and AthenaeumAI will save the source into your persistent library.
+              Generate an assessment from a PDF and Athenaeum AI will save the source into your persistent library.
             </p>
             <Button asChild className="mt-5 bg-accent text-primary-foreground hover:bg-accent/90">
               <Link to="/assessments/create">Upload and Generate</Link>

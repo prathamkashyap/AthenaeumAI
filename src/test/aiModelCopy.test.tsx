@@ -44,18 +44,18 @@ vi.mock("@/context/QuizContext", () => ({
   }),
 }));
 
-import Index from "@/pages/Index";
+import Dashboard from "@/pages/Dashboard";
 import CreateAssessment from "@/pages/CreateAssessment";
 
 describe("AI attribution in the dashboard", () => {
   it("credits the provider rather than a specific model", () => {
-    render(<Index />);
+    render(<Dashboard />);
 
     expect(screen.getByText(/powered by groq/i)).toBeInTheDocument();
   });
 
   it("does not name a model that is no longer served", () => {
-    const { container } = render(<Index />);
+    const { container } = render(<Dashboard />);
 
     expect(container.textContent).not.toMatch(/llama/i);
     expect(container.textContent).not.toMatch(/\b70b\b/i);

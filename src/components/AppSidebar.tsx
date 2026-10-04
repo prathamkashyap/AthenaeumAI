@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, GraduationCap, Bot, CalendarCheck } from "lucide-react";
+import { BrandLockup } from "@/components/BrandLockup";
+import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, Bot, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { topicIdentity } from "@/lib/topicIdentity";
@@ -57,21 +58,8 @@ export function AppSidebar() {
           collapsed ? "p-0" : "px-2",
         )}
       >
-        <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
-          <div
-            className={cn(
-              "flex shrink-0 items-center justify-center rounded-lg bg-gradient-brand shadow-glow",
-              collapsed ? "h-11 w-11" : "h-9 w-9 rounded-md",
-            )}
-          >
-            <GraduationCap className={cn("text-primary-foreground", collapsed ? "h-6 w-6" : "h-5 w-5")} />
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="font-serif text-lg leading-none text-foreground">Athenaeum</span>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-1">Intelligent Learning</span>
-            </div>
-          )}
+        <div className={cn("flex items-center", collapsed && "justify-center")}>
+          <BrandLockup size={collapsed ? "lg" : "sm"} markOnly={collapsed} />
         </div>
       </SidebarHeader>
 

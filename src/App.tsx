@@ -8,7 +8,8 @@ import { AuthProvider } from "@/context/AuthContext";
 import { QuizProvider } from "@/context/QuizContext";
 import { lazy, Suspense } from "react";
 import Auth from "./pages/Auth.tsx";
-import Index from "./pages/Index.tsx";
+import Dashboard from "./pages/Dashboard.tsx";
+import Landing from "./pages/Landing.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { Loader2 } from "lucide-react";
 
@@ -41,9 +42,13 @@ const App = () => (
         <AuthProvider>
           <QuizProvider>
             <Routes>
+              {/* The domain root is the public face. Landing redirects a signed-in
+                  member to /dashboard itself, so this stays a sibling of /auth
+                  rather than something ProtectedRoute has to special-case. */}
+              <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
               <Route element={<ProtectedRoute />}>
-                <Route path="/" element={<Index />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/*" element={
                   <Suspense fallback={<SuspenseFallback />}>
                     <Routes>
