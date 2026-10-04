@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, BookOpen, Layers, Upload, BarChart3, ScrollText, GraduationCap, Bot, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, useSidebar,
@@ -44,10 +45,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-2 px-2 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-gradient-gold shadow-glow">
-            <GraduationCap className="h-5 w-5 text-primary-foreground" />
+      {/* Collapsed, the header drops its own padding so the mark can centre in the
+          full 4rem rail instead of being inset twice. Expanded is untouched. */}
+      <SidebarHeader className={cn("border-b border-sidebar-border", collapsed && "p-0")}>
+        <div className={cn("flex items-center gap-2 py-3", collapsed ? "justify-center" : "px-2")}>
+          <div
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-lg bg-gradient-gold shadow-glow",
+              collapsed ? "h-11 w-11" : "h-9 w-9 rounded-md",
+            )}
+          >
+            <GraduationCap className={cn("text-primary-foreground", collapsed ? "h-6 w-6" : "h-5 w-5")} />
           </div>
           {!collapsed && (
             <div className="flex flex-col">

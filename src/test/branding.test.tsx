@@ -110,7 +110,10 @@ describe("the brand mark is the blue Athenaeum treatment", () => {
     const sidebar = await readRepoFile("src/components/AppSidebar.tsx");
 
     expect(sidebar).toContain("bg-gradient-gold");
-    expect(sidebar).toMatch(/GraduationCap className="h-5 w-5/);
+    // Matched loosely: the icon className is composed with `cn` and varies between
+    // the collapsed and expanded tile sizes, so assert the mark and its colour
+    // treatment rather than one exact string.
+    expect(sidebar).toMatch(/<GraduationCap[\s\S]{0,120}text-primary-foreground/);
   });
 
   it("the auth page uses the same mark at both breakpoints", async () => {
