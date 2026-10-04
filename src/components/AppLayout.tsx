@@ -68,7 +68,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {showTop && (
             <button
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              className="fixed bottom-6 right-6 z-50 h-11 w-11 rounded-full bg-gradient-gold text-primary-foreground shadow-elegant flex items-center justify-center hover:scale-110 transition-transform animate-scale-in"
+              className="fixed bottom-6 right-6 z-50 h-11 w-11 rounded-full bg-gradient-brand text-primary-foreground shadow-elegant flex items-center justify-center hover:scale-110 transition-transform animate-scale-in"
               aria-label="Scroll to top"
             >
               <ArrowUp className="h-5 w-5" />

@@ -307,7 +307,7 @@ const AttemptAssessment = () => {
               {current === questions.length - 1 ? (
                 <Button
                   onClick={() => setShowConfirm(true)}
-                  className="bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow"
+                  className="bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow"
                 >
                   <Send className="h-4 w-4 mr-2" /> Submit Quiz
                 </Button>
@@ -366,7 +366,7 @@ const AttemptAssessment = () => {
                 <Button
                   onClick={() => setShowConfirm(true)}
                   size="sm"
-                  className="w-full mt-4 bg-gradient-gold text-primary-foreground hover:opacity-90"
+                  className="w-full mt-4 bg-gradient-brand text-primary-foreground hover:opacity-90"
                 >
                   <Send className="h-3.5 w-3.5 mr-1.5" /> Submit All
                 </Button>
@@ -399,7 +399,7 @@ const AttemptAssessment = () => {
                   Review
                 </Button>
                 <Button
-                  className="flex-1 bg-gradient-gold text-primary-foreground hover:opacity-90"
+                  className="flex-1 bg-gradient-brand text-primary-foreground hover:opacity-90"
                   onClick={() => {
                     setShowConfirm(false);
                     handleSubmit();

@@ -65,13 +65,17 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        serif: ['Inter', 'system-ui', 'sans-serif'],
+        // Instrument Serif is imported by index.css and shipped in the bundle.
+        // It used to resolve to Inter here, which meant every `font-serif` in the
+        // JSX rendered as body text and the display face was never seen.
+        serif: ['Instrument Serif', 'Iowan Old Style', 'Georgia', 'serif'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       backgroundImage: {
         'gradient-hero': 'var(--gradient-hero)',
         'gradient-card': 'var(--gradient-card)',
+        'gradient-brand': 'var(--gradient-brand)',
         'gradient-gold': 'var(--gradient-gold)',
       },
       boxShadow: {

@@ -19,6 +19,8 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { dashboardCopy } from "@/lib/dashboardCopy";
+import { subjectIcon } from "@/lib/subjectIcons";
 import { useAuth } from "@/context/AuthContext";
 
 const API_BASE = "/quiz";
@@ -57,7 +59,12 @@ function AnimatedStat({ value, suffix = "" }: { value: number; suffix?: string }
 interface SubjectInfo {
   subject: string;
   shortName: string;
-  icon: string;
+  /**
+   * An emoji string from the API. Deliberately unused: the UI derives its icon
+   * from the subject via `subjectIcon`, so emoji cannot reach the product even
+   * though the field still exists on the wire.
+   */
+  icon?: string;
   quizCount: number;
   defaultQuizId: string | null;
   questionCount: number;
@@ -140,6 +147,22 @@ const Index = () => {
   const [recentQuizzes, setRecentQuizzes] = useState<RecentQuiz[]>([]);
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [recommendations, setRecommendations] = useState<DashboardRecommendations | null>(null);
+
+  /**
+   * Contextual opening lines. Recomputed as the fetches land, so the hero settles
+   * from "new learner" copy into whatever is actually true. `Date.now()` is read on
+   * render but the rotation key is the day index, so the text is stable within a
+   * day and does not churn between renders.
+   */
+  const copy = dashboardCopy(
+    {
+      quizzesTaken: analytics?.totals?.quizzesTaken,
+      reviewDueToday: analytics?.totals?.reviewDueToday ?? recommendations?.reviewDueToday,
+      weakTopicCount: analytics?.weakTopics?.length,
+      recentQuizCount: recentQuizzes.length,
+    },
+    Date.now(),
+  );
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingRecent, setLoadingRecent] = useState(true);
 
@@ -237,23 +260,22 @@ const Index = () => {
                 <Sparkles className="h-3.5 w-3.5" /> Intelligent Learning System
               </div>
 
-              <h1 className="font-serif text-4xl lg:text-6xl leading-[1.15] tracking-tight text-foreground break-words">
+              {/* Greeting in Inter, given name in Instrument Serif. The display
+                  face now actually resolves, so the contrast is real rather than
+                  an accident of two identical fonts. */}
+              <h1 className="text-4xl lg:text-6xl leading-[1.08] tracking-tight text-foreground break-words">
                 {getTimeGreeting()},{" "}
-                <span className="text-accent italic inline-block">{user?.name?.split(" ")[0] || "Learner"}</span>.
+                <span className="font-serif italic text-accent">{user?.name?.split(" ")[0] || "Learner"}</span>.
               </h1>
-              <p className="font-serif text-xl lg:text-2xl italic text-muted-foreground/90">
-                Your adaptive workspace is ready.
+              <p className="font-serif text-2xl lg:text-3xl leading-snug text-foreground/90 text-balance">
+                {copy.hero}
               </p>
 
-              <p className="text-muted-foreground max-w-xl pt-1">
-                {analytics?.weakTopics?.length
-                  ? `${analytics.weakTopics.length} weak topic${analytics.weakTopics.length > 1 ? "s" : ""} detected from your attempts.`
-                  : "Upload PDFs, generate assessments, and AthenaeumAI will build your mastery map."}
-              </p>
+              <p className="text-muted-foreground max-w-xl pt-1">{copy.support}</p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <Button asChild size="lg" className="bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow">
+              <Button asChild size="lg" className="bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow">
                 <Link to="/assessments/create">Generate Quiz <ArrowUpRight className="ml-1 h-4 w-4" /></Link>
               </Button>
 
@@ -286,7 +308,7 @@ const Index = () => {
         <section>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="font-serif text-2xl">Subjects</h2>
+              <h2 className="font-serif text-2xl">Your Subjects</h2>
               <p className="text-xs text-muted-foreground mt-1">Your curriculum — click to start practicing</p>
             </div>
             <Button
@@ -317,10 +339,19 @@ const Index = () => {
                   <button
                     key={s.subject}
                     onClick={() => handleSubjectClick(s)}
-                    className={`group relative p-5 rounded-xl border ${colors.border} ${colors.bg} text-left transition-all duration-300 hover:shadow-[0_0_30px_hsl(38_55%_58%/0.1)] hover:scale-[1.02] animate-fade-in-up`}
+                    className={`group relative p-5 rounded-xl border ${colors.border} ${colors.bg} text-left transition-all duration-300 hover:shadow-[0_0_30px_hsl(199_90%_60%/0.14)] hover:scale-[1.02] animate-fade-in-up`}
                     style={{ animationDelay: `${i * 50}ms` }}
                   >
-                    <span className="text-2xl mb-3 block">{s.icon}</span>
+                    {(() => {
+                      const Icon = subjectIcon(s.subject, s.shortName);
+                      return (
+                        <span
+                          className={`mb-3 inline-flex h-9 w-9 items-center justify-center rounded-lg border ${colors.border} ${colors.bg}`}
+                        >
+                          <Icon className={`h-4 w-4 ${colors.text}`} />
+                        </span>
+                      );
+                    })()}
                     <p className={`font-medium text-sm ${colors.text}`}>{s.shortName}</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.subject}</p>
                     {s.defaultQuizId ? (
@@ -345,7 +376,7 @@ const Index = () => {
           <Card className="academic-card p-6 lg:col-span-2">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="font-serif text-2xl">Recent Quizzes</h2>
+                <h2 className="font-serif text-2xl">Recent Assessments</h2>
                 <p className="text-xs text-muted-foreground mt-1">Your latest attempts</p>
               </div>
               <Button asChild variant="ghost" size="sm" className="text-accent hover:text-accent">
@@ -414,8 +445,8 @@ const Index = () => {
 
           <Card className="academic-card p-6 space-y-6">
             <div>
-              <h2 className="font-serif text-2xl">Quick Start</h2>
-              <p className="text-xs text-muted-foreground mt-1">Recommended next action</p>
+              <h2 className="font-serif text-2xl">Your Next Move</h2>
+              <p className="text-xs text-muted-foreground mt-1">Best next step, chosen from your attempts</p>
             </div>
 
             {recommendations?.optimalNextAction && (
@@ -443,7 +474,7 @@ const Index = () => {
                   <p className="text-sm text-foreground mt-1">{recommendations.reviewDueToday || 0} cards</p>
                 </div>
                 <div className="rounded-lg border border-border bg-card/30 p-3 col-span-2">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Recommended Quiz</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Suggested for you</p>
                   <p className="text-sm text-foreground mt-1 truncate">
                     {recommendations.recommendedQuiz?.title || "Generate a quiz to seed recommendations"}
                   </p>
@@ -466,7 +497,7 @@ const Index = () => {
 
               <Button
                 asChild
-                className="w-full bg-gradient-gold text-primary-foreground hover:opacity-90 shadow-glow justify-start"
+                className="w-full bg-gradient-brand text-primary-foreground hover:opacity-90 shadow-glow justify-start"
               >
                 <Link to="/assessments/create">
                   <ArrowUpRight className="h-4 w-4 mr-2" /> Upload PDF & Generate
