@@ -56,7 +56,7 @@ const claimAttemptForSync = (attemptId, session) =>
   QuizAttempt.findOneAndUpdate(
     { _id: attemptId, "sync.status": { $ne: "processed" } },
     { $set: { "sync.status": "processed", "sync.appliedAt": new Date() } },
-    { new: true, session }
+    { returnDocument: "after", session }
   );
 
 /**

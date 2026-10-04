@@ -135,7 +135,7 @@ const upsertOpenQueueItem = async (item) => {
 
   // 1. The ordinary path. Split from the upsert so a miss is observable: an upsert
   //    would create the row we may still be able to adopt instead.
-  const identified = await ReviewQueue.findOneAndUpdate(filter, update, { new: true });
+  const identified = await ReviewQueue.findOneAndUpdate(filter, update, { returnDocument: "after" });
   if (identified) return identified;
 
   // 2. A row written before `questionIndex` became part of the identity carries
@@ -164,7 +164,7 @@ const upsertOpenQueueItem = async (item) => {
         "metadata.questionIndex": item.questionIndex,
       },
       update,
-      { new: true }
+      { returnDocument: "after" }
     );
     if (adopted) return adopted;
   }
@@ -175,7 +175,7 @@ const upsertOpenQueueItem = async (item) => {
   return ReviewQueue.findOneAndUpdate(
     filter,
     { ...update, $setOnInsert: { createdAt: new Date() } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: "after" }
   );
 };
 
@@ -307,7 +307,7 @@ export const completeReviewQueueItem = async ({ userId, itemId }) => {
   const item = await ReviewQueue.findOneAndUpdate(
     { _id: itemId, user: userId, status: "open" },
     { status: "completed", completedAt: new Date() },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   if (!item) {
@@ -338,7 +338,7 @@ export const snoozeReviewQueueItem = async ({ userId, itemId, hours = 24 }) => {
   const item = await ReviewQueue.findOneAndUpdate(
     { _id: itemId, user: userId, status: "open" },
     { dueAt: nowPlusHours(hours), priority: 40 },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   if (!item) {

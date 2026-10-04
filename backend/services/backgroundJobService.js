@@ -22,7 +22,7 @@ const conditionalUpdate = (jobId, filter, update) =>
   BackgroundJob.findOneAndUpdate(
     { _id: jobId, status: { $in: OPEN_STATUSES }, ...filter },
     update,
-    { new: true },
+    { returnDocument: "after" },
   );
 
 export const createBackgroundJob = async ({ user, type, resource = {} }) =>
@@ -105,7 +105,7 @@ export const claimTerminalJobForRetry = (jobId) =>
         queueJobId: null,
       },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
 
 /**

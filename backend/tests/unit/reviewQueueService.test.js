@@ -741,7 +741,7 @@ describe("upsert interaction", () => {
     withProgress([topic("Deadlock", { weaknessScore: 40, confidence: 40 })]);
     await rebuildReviewQueueForUser(USER_ID);
     expect(creatingCalls().length).toBeGreaterThan(0);
-    expect(creatingCalls()[0][2]).toEqual({ upsert: true, new: true });
+    expect(creatingCalls()[0][2]).toEqual({ upsert: true, returnDocument: "after" });
   });
 
   test("stamps createdAt only when the item is inserted", async () => {
@@ -1035,7 +1035,7 @@ describe("completeReviewQueueItem", () => {
     expect(reviewQueueFindOneAndUpdate).toHaveBeenCalledWith(
       { _id: "rq-1", user: USER_ID, status: "open" },
       { status: "completed", completedAt: NOW },
-      { new: true },
+      { returnDocument: "after" },
     );
   });
 
@@ -1098,7 +1098,7 @@ describe("snoozeReviewQueueItem", () => {
     const [filter, update, options] = reviewQueueFindOneAndUpdate.mock.calls[0];
     expect(filter).toEqual({ _id: "rq-1", user: USER_ID, status: "open" });
     expect(update).toEqual({ dueAt: new Date(NOW.getTime() + 48 * HOUR), priority: 40 });
-    expect(options).toEqual({ new: true });
+    expect(options).toEqual({ returnDocument: "after" });
   });
 
   test("defaults to a twenty-four hour snooze", async () => {

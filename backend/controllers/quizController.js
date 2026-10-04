@@ -463,7 +463,7 @@ export const deleteQuiz = async (req, res, next) => {
     const quiz = await Quiz.findOneAndUpdate(
       { _id: quizId, user: req.user._id, deletedAt: null },
       { deletedAt: new Date() },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!quiz) {
